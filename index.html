@@ -3,281 +3,99 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <meta name="color-scheme" content="dark" />
-  <title>Etiqueta Shopee - Value</title>
+  <title>Conversor de Etiquetas Shopee</title>
 
-  <!-- Font (optional) -->
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,600;700&family=Sora:wght@400;500;600;700&display=swap" rel="stylesheet">
 
-  <link rel="stylesheet" href="./etiquetas.css" />
+  <link rel="stylesheet" href="./src/styles/base.css" />
+  <link rel="stylesheet" href="./src/styles/components.css" />
 
-  <!-- Libs (CDN) -->
-  <script defer src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.14.305/pdf.min.js"></script>
-  <script defer src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
-
-  <script defer src="./etiquetas.js"></script>
+  <script defer src="https://cdn.jsdelivr.net/npm/pdf-lib@1.17.1/dist/pdf-lib.min.js"></script>
+  <script type="module" defer src="./src/main.js"></script>
 </head>
 <body>
-  <div class="bg" aria-hidden="true"></div>
+  <div class="ambient" aria-hidden="true"></div>
 
-  <main class="wrap">
-    <header class="topbar">
-      <div class="brand">
-        <div class="logo" aria-hidden="true"><span class="logoMark">V</span></div>
-        <div class="brandText">
-          <div class="kicker">Value • Ferramentas</div>
-          <div class="brandTitle">Etiqueta Shopee</div>
-          <div class="subtitle">Converter PDF para impressão A4 com layout limpo e consistente.</div>
-        </div>
-      </div>
-
-      <a class="back" href="/" title="Voltar para o site">Voltar</a>
+  <main class="page">
+    <header class="hero">
+      <span class="badge">Shopee</span>
+      <h1>Conversor de Etiquetas Shopee</h1>
+      <p>Gere um PDF pronto para impressão em 100x150mm</p>
     </header>
 
-    <section class="card">
-      <div class="layout">
-        <div class="controls">
-          <div class="sectionTitle">Converter PDF</div>
-          <div class="sectionSub">Faça upload do PDF da Shopee, escolha o preset e gere o arquivo pronto para imprimir.</div>
+    <section class="panel">
+      <div class="panel-grid">
+        <div class="panel-card">
+          <div class="field">
+            <label class="label" for="modeSelect">Modo</label>
+            <select id="modeSelect" class="select"></select>
+          </div>
 
-          <!-- Mini passo a passo (1 Upload → 2 Preset → 3 Processar) -->
-          <div class="stepper" role="list" aria-label="Passo a passo">
-            <div class="step is-active" data-step="1" role="listitem">
-              <div class="stepCircle" aria-hidden="true">
-                <span class="stepNum">1</span>
-                <span class="stepCheck">✓</span>
-                <span class="stepSpin"></span>
+          <div class="field">
+            <label class="label" for="fileInput">PDF de entrada</label>
+            <div id="dropZone" class="drop-zone" role="button" tabindex="0" aria-label="Área de upload. Clique para selecionar um PDF ou arraste e solte aqui.">
+              <div class="drop-inner">
+                <div class="drop-title">Arraste e solte seu PDF aqui</div>
+                <div class="drop-sub">ou clique para selecionar</div>
+                <button id="btnPick" class="btn ghost" type="button">Selecionar PDF</button>
               </div>
-              <div class="stepLabel">Upload</div>
             </div>
-            <div class="step" data-step="2" role="listitem">
-              <div class="stepCircle" aria-hidden="true">
-                <span class="stepNum">2</span>
-                <span class="stepCheck">✓</span>
-                <span class="stepSpin"></span>
-              </div>
-              <div class="stepLabel">Preset</div>
-            </div>
-            <div class="step" data-step="3" role="listitem">
-              <div class="stepCircle" aria-hidden="true">
-                <span class="stepNum">3</span>
-                <span class="stepCheck">✓</span>
-                <span class="stepSpin"></span>
-              </div>
-              <div class="stepLabel">Processar</div>
+            <input id="fileInput" class="input--hidden" type="file" accept="application/pdf" />
+            <div class="file-meta">
+              <span id="fileName">Nenhum arquivo selecionado</span>
+              <span id="fileSize">—</span>
             </div>
           </div>
 
-          <div class="form">
-            <div class="field">
-              <label class="label" for="pdfInput">PDF da Shopee</label>
-
-              <!-- Upload premium (arrastar & soltar) -->
-              <div id="dropZone" class="fileDrop" role="button" tabindex="0" aria-label="Área de upload. Clique para escolher um PDF ou arraste e solte aqui.">
-                <div class="fileRow">
-                  <button id="btnPick" class="fileBtn" type="button">
-                    <span class="fileBtnIcon" aria-hidden="true">
-                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                        <path d="M14 2H7a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7l-5-5Z" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/>
-                        <path d="M14 2v5h5" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/>
-                        <path d="M8 13h8M8 17h6" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
-                      </svg>
-                    </span>
-                    Escolher arquivo
-                  </button>
-
-                  <div class="fileInfo">
-                    <div id="fileName" class="fileName">Nenhum arquivo selecionado</div>
-                    <div id="fileMeta" class="fileMeta">Arraste e solte aqui • PDF</div>
-                  </div>
-
-                  <button id="btnClear" class="iconBtn" type="button" title="Remover arquivo" aria-label="Remover arquivo" disabled>
-                    <span aria-hidden="true">×</span>
-                  </button>
-                </div>
-              </div>
-
-              <input id="pdfInput" class="input input--hidden" type="file" accept="application/pdf" />
-              <div class="hint">Se o PDF vier em 4 por folha, selecione o preset "A4 (4 por página)".</div>
-            </div>
-
-            <div class="field">
-              <label class="label" for="preset">Preset</label>
-              <select id="preset" class="select"></select>
-              <div id="presetChips" class="chips" aria-live="polite"></div>
-              <div class="hint">Escolha como está o PDF de entrada e como você quer imprimir.</div>
-            </div>
-
-            <!-- Opções avançadas -->
-            <div class="field">
-              <div class="toggleRow">
-                <label class="toggleLabel" for="autoPrint">
-                  <input type="checkbox" id="autoPrint" class="toggleInput" />
-                  <span class="toggleSwitch"></span>
-                  <span class="toggleText">Imprimir automaticamente após processar</span>
-                </label>
-              </div>
-            </div>
-
-            <div class="actions">
-              <button id="btnProcess" class="btn primary" disabled>Processar</button>
-              <button id="btnPrint" class="btn" disabled title="Imprimir etiquetas">
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" style="margin-right:6px;vertical-align:middle;">
-                  <path d="M6 9V2h12v7" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-                  <path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-                  <path d="M6 14h12v8H6z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-                </svg>
-                Imprimir
-              </button>
-              <button id="btnDownload" class="btn" disabled>Baixar PDF</button>
-            </div>
-
-            <div class="field">
-              <label class="label">Status</label>
-              <div id="status" class="status status--idle">Selecione um PDF para começar.</div>
-            </div>
-
-            <!-- Estatísticas -->
-            <div id="statsBox" class="statsBox" hidden>
-              <div class="statsTitle">📊 Resumo</div>
-              <div class="statsGrid">
-                <div class="statItem">
-                  <span class="statValue" id="statTotal">0</span>
-                  <span class="statLabel">Etiquetas</span>
-                </div>
-                <div class="statItem">
-                  <span class="statValue" id="statPages">0</span>
-                  <span class="statLabel">Páginas PDF</span>
-                </div>
-                <div class="statItem">
-                  <span class="statValue" id="statTime">0s</span>
-                  <span class="statLabel">Tempo</span>
-                </div>
-              </div>
-            </div>
-
-            <div class="note">
-              <div class="noteTitle">Dicas de impressão</div>
-              <ul class="noteList">
-                <li>Na impressora, use <b>Escala 100%</b> (não usar "ajustar/encaixar na página").</li>
-                <li>Se a etiqueta sair cortada, teste outro preset (2 ou 4 por folha).</li>
-                <li>Ative <b>Imprimir automaticamente</b> para agilizar o fluxo.</li>
-              </ul>
-            </div>
-          </div>
+          <button id="btnGenerate" class="btn primary" type="button" disabled>Gerar etiquetas</button>
         </div>
 
-        <div class="preview">
-          <div class="previewHeader">
-            <div class="previewHeadLeft">
-              <div class="previewTitle">Pré-visualização</div>
-              <div class="previewSub">Mostra até 8 etiquetas (para checar se o recorte ficou certo).</div>
+        <div class="panel-card">
+          <div class="status-block">
+            <div class="status-header">
+              <div class="status-title">Status</div>
+              <div class="elapsed">Tempo: <span id="elapsedTime">0s</span></div>
             </div>
+            <div id="statusText" class="status-text status-text--idle">Selecione um PDF para começar.</div>
+            <div id="progressText" class="progress-text">—</div>
+            <div class="progress-bar"><div id="progressFill" class="progress-fill"></div></div>
+          </div>
 
-            <div class="previewHeadRight">
-              <div id="meta" class="previewMeta"></div>
-              <div id="counter" class="previewCounter"></div>
-
-              <div class="previewTools" aria-label="Ferramentas de pré-visualização">
-                <div class="seg" role="group" aria-label="Tamanho do preview">
-                  <button id="btnViewCompact" class="segBtn is-active" type="button" title="Ver compacto">Compacto</button>
-                  <button id="btnViewLarge" class="segBtn" type="button" title="Ver grande">Grande</button>
-                </div>
-
-                <button id="btnFullscreen" class="iconBtn iconBtn--tool" type="button" title="Tela cheia" aria-label="Abrir pré-visualização em tela cheia">
-                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
-                    <path d="M9 3H5a2 2 0 0 0-2 2v4" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
-                    <path d="M15 3h4a2 2 0 0 1 2 2v4" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
-                    <path d="M9 21H5a2 2 0 0 1-2-2v-4" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
-                    <path d="M15 21h4a2 2 0 0 0 2-2v-4" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
-                  </svg>
-                </button>
+          <div id="summary" class="summary" hidden>
+            <div class="summary-title">Resumo</div>
+            <div class="summary-grid">
+              <div>
+                <div class="summary-label">Modo escolhido</div>
+                <div id="summaryMode" class="summary-value">—</div>
+              </div>
+              <div>
+                <div class="summary-label">Páginas entrada</div>
+                <div id="summaryInput" class="summary-value">0</div>
+              </div>
+              <div>
+                <div class="summary-label">Páginas saída</div>
+                <div id="summaryOutput" class="summary-value">0</div>
               </div>
             </div>
+            <button id="btnDownload" class="btn accent" type="button" disabled>Baixar PDF 100x150</button>
           </div>
 
-          <div id="progressWrap" class="progressWrap" hidden>
-            <div class="progressTop">
-              <div id="progressText" class="progressText">Processando…</div>
-              <div id="progressPct" class="progressPct">0%</div>
-            </div>
-            <div class="progressBar" aria-hidden="true"><div id="progressFill" class="progressFill"></div></div>
-          </div>
-
-          <div id="preview" class="previewBody">
-            <div class="empty">Nada para mostrar ainda.</div>
+          <div class="tips">
+            <div class="tips-title">Dicas rápidas</div>
+            <ul>
+              <li>Imprima com escala 100% (sem ajustar a página).</li>
+              <li>Use papel 100x150mm na impressora térmica.</li>
+              <li>Confira o modo escolhido antes de gerar.</li>
+            </ul>
           </div>
         </div>
       </div>
     </section>
-
-    <footer class="footer">
-      <span>Value • Ferramentas</span>
-      <span class="dot">•</span>
-      <span>Desenvolvido por Iury (versão beta)</span>
-      <span class="dot">•</span>
-      <span>Impressão A4</span>
-    </footer>
   </main>
 
-  <!-- Modal: preview em tela cheia -->
-  <div id="previewModal" class="modal" hidden>
-    <div class="modalBackdrop" data-close="1" aria-hidden="true"></div>
-    <div class="modalDialog" role="dialog" aria-modal="true" aria-label="Pré-visualização em tela cheia">
-      <div class="modalTop">
-        <div class="modalTitle">Pré-visualização <span id="modalCounter" class="modalCounter"></span></div>
-        <div class="modalTools">
-          <div class="seg" role="group" aria-label="Colunas">
-            <button id="modalCols1" class="segBtn" type="button" title="1 coluna">1 col</button>
-            <button id="modalCols2" class="segBtn is-active" type="button" title="2 colunas">2 col</button>
-          </div>
-          <button id="modalClose" class="iconBtn iconBtn--tool" type="button" title="Fechar" aria-label="Fechar">×</button>
-        </div>
-      </div>
-      <div id="modalPreview" class="previewBody previewBody--modal">
-        <div class="empty">Nada para mostrar ainda.</div>
-      </div>
-    </div>
-  </div>
-
-  <!-- Modal: viewer (zoom / navegação) -->
-  <div id="viewerModal" class="modal modal--viewer" hidden>
-    <div class="modalBackdrop" data-close-viewer="1" aria-hidden="true"></div>
-    <div class="viewerDialog" role="dialog" aria-modal="true" aria-label="Visualizador de etiqueta">
-      <div class="viewerTop">
-        <div class="viewerLeft">
-          <div class="viewerTitle">Etiqueta</div>
-          <div id="viewerCounter" class="viewerCounter">—</div>
-        </div>
-
-        <div class="viewerTools" aria-label="Ferramentas do visualizador">
-          <div class="seg" role="group" aria-label="Zoom rápido">
-            <button id="viewerFit" class="segBtn is-active" type="button" title="Ajustar na tela">Ajustar</button>
-            <button id="viewer100" class="segBtn" type="button" title="Zoom 100%">100%</button>
-          </div>
-
-          <button id="viewerZoomOut" class="iconBtn iconBtn--tool" type="button" title="Diminuir zoom" aria-label="Diminuir zoom">−</button>
-          <div id="viewerZoomPct" class="zoomPct" aria-label="Zoom atual">100%</div>
-          <button id="viewerZoomIn" class="iconBtn iconBtn--tool" type="button" title="Aumentar zoom" aria-label="Aumentar zoom">+</button>
-
-          <button id="viewerPrev" class="iconBtn iconBtn--tool" type="button" title="Anterior" aria-label="Etiqueta anterior">←</button>
-          <button id="viewerNext" class="iconBtn iconBtn--tool" type="button" title="Próxima" aria-label="Próxima etiqueta">→</button>
-
-          <button id="viewerClose" class="iconBtn iconBtn--tool" type="button" title="Fechar" aria-label="Fechar">×</button>
-        </div>
-      </div>
-
-      <div id="viewerBody" class="viewerBody">
-        <div id="viewerStage" class="viewerStage">
-          <img id="viewerImg" class="viewerImg" alt="Etiqueta" />
-        </div>
-      </div>
-    </div>
-  </div>
-
-  <!-- Toasts -->
-  <div id="toasts" class="toasts" aria-live="polite" aria-atomic="true"></div>
+  <div id="toastStack" class="toasts" aria-live="polite" aria-atomic="true"></div>
 </body>
 </html>
+
