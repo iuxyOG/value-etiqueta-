@@ -7,30 +7,40 @@
 
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,600;700&family=Sora:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Sora:wght@400;500;600;700&display=swap" rel="stylesheet">
 
   <link rel="stylesheet" href="./src/styles/base.css" />
   <link rel="stylesheet" href="./src/styles/components.css" />
 
-  <script defer src="https://cdn.jsdelivr.net/npm/pdf-lib@1.17.1/dist/pdf-lib.min.js"></script>
-  <script type="module" defer src="./src/main.js"></script>
+  <script defer src="./vendor/pdf-lib.min.js"></script>
+  <script defer src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.14.305/pdf.min.js"></script>
+  <script defer src="./etiquetas.js"></script>
 </head>
 <body>
   <div class="ambient" aria-hidden="true"></div>
 
   <main class="page">
-    <header class="hero">
-      <span class="badge">Shopee</span>
-      <h1>Conversor de Etiquetas Shopee</h1>
-      <p>Gere um PDF pronto para impressão em 100x150mm</p>
+    <header class="topbar">
+      <div class="brand">
+        <div class="logo" aria-hidden="true">V</div>
+        <div class="brand-text">
+          <div class="brand-kicker">Value • Ferramentas</div>
+          <h1>Conversor de Etiquetas Shopee</h1>
+          <p>Gere um PDF pronto para impressão em 100x150mm</p>
+        </div>
+      </div>
+      <a class="back" href="https://valueagencia.com.br" target="_blank" rel="noreferrer">Voltar</a>
     </header>
 
     <section class="panel">
       <div class="panel-grid">
         <div class="panel-card">
+          <div class="section-title">Converter PDF</div>
+          <div class="section-sub">Faça upload do PDF da Shopee, escolha o modo e gere o arquivo pronto para imprimir.</div>
           <div class="field">
             <label class="label" for="modeSelect">Modo</label>
             <select id="modeSelect" class="select"></select>
+            <div id="modeHint" class="mode-hint">Detectando layout...</div>
           </div>
 
           <div class="field">
@@ -49,18 +59,41 @@
             </div>
           </div>
 
-          <button id="btnGenerate" class="btn primary" type="button" disabled>Gerar etiquetas</button>
+          <div class="field toggle-field">
+            <label class="toggle">
+              <input id="autoPrint" type="checkbox" />
+              <span class="toggle-track" aria-hidden="true"></span>
+              <span class="toggle-text">Imprimir automaticamente após gerar</span>
+            </label>
+          </div>
+
+          <div class="action-row">
+            <button id="btnGenerate" class="btn primary" type="button" disabled>Gerar etiquetas</button>
+            <button id="btnCancel" class="btn ghost btn-small" type="button" disabled>Cancelar</button>
+          </div>
         </div>
 
-        <div class="panel-card">
+        <div class="panel-card panel-card--preview">
           <div class="status-block">
             <div class="status-header">
               <div class="status-title">Status</div>
-              <div class="elapsed">Tempo: <span id="elapsedTime">0s</span></div>
+              <div class="elapsed">Tempo: <span id="elapsedTime">0s</span> · ETA: <span id="etaText">—</span></div>
             </div>
             <div id="statusText" class="status-text status-text--idle">Selecione um PDF para começar.</div>
             <div id="progressText" class="progress-text">—</div>
             <div class="progress-bar"><div id="progressFill" class="progress-fill"></div></div>
+          </div>
+
+          <div class="preview-card">
+            <div class="preview-header">
+              <div class="preview-title">Pré-visualização</div>
+              <button id="btnOpenPreview" class="btn ghost btn-small" type="button" disabled>Abrir PDF</button>
+            </div>
+            <div class="preview-body">
+              <div id="previewEmpty" class="preview-empty">Gere um PDF para visualizar as etiquetas.</div>
+              <iframe id="previewFrame" class="preview-frame" title="Pré-visualização do PDF" hidden></iframe>
+            </div>
+            <div id="previewThumbs" class="thumb-grid" aria-label="Miniaturas das etiquetas" hidden></div>
           </div>
 
           <div id="summary" class="summary" hidden>
@@ -80,6 +113,7 @@
               </div>
             </div>
             <button id="btnDownload" class="btn accent" type="button" disabled>Baixar PDF 100x150</button>
+            <button id="btnTestPage" class="btn ghost btn-small" type="button">Baixar página de teste 100x150</button>
           </div>
 
           <div class="tips">
@@ -96,6 +130,26 @@
   </main>
 
   <div id="toastStack" class="toasts" aria-live="polite" aria-atomic="true"></div>
+
+  <div id="viewerModal" class="viewer" hidden>
+    <div class="viewer-backdrop" data-close="1" aria-hidden="true"></div>
+    <div class="viewer-dialog" role="dialog" aria-modal="true" aria-label="Visualizador de etiquetas">
+      <div class="viewer-top">
+        <div class="viewer-title">Etiqueta</div>
+        <div class="viewer-tools">
+          <button id="viewerPrev" class="btn ghost btn-small" type="button">Anterior</button>
+          <button id="viewerNext" class="btn ghost btn-small" type="button">Próxima</button>
+          <button id="viewerZoomOut" class="btn ghost btn-small" type="button">−</button>
+          <span id="viewerScale" class="viewer-scale">100%</span>
+          <button id="viewerZoomIn" class="btn ghost btn-small" type="button">+</button>
+          <button id="viewerClose" class="btn ghost btn-small" type="button">Fechar</button>
+        </div>
+      </div>
+      <div class="viewer-body">
+        <canvas id="viewerCanvas" class="viewer-canvas"></canvas>
+      </div>
+    </div>
+  </div>
 </body>
 </html>
 

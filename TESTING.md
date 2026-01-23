@@ -24,3 +24,21 @@
 1. Teste com PDFs acima de 50 páginas.
 2. Confirme que a UI permanece responsiva e o status mostra "Processando página X de N...".
 3. Verifique se o PDF final baixa corretamente.
+
+## Auto-impressão
+1. Marque "Imprimir automaticamente após gerar".
+2. Gere o PDF e confirme se a janela de impressão abre (permitir popups).
+3. Se o popup for bloqueado, confirme o aviso e use "Abrir PDF" ou "Baixar PDF 100x150".
+
+## Pré-visualização e zoom
+1. Gere um PDF e valide o iframe de pré-visualização.
+2. Clique em uma miniatura para abrir o visualizador.
+3. Teste zoom +/− e navegação entre páginas.
+
+## Cancelamento
+1. Inicie o processamento com um PDF grande.
+2. Clique em "Cancelar" e confirme o status "Processamento cancelado.".
+
+## Página de teste 100x150
+1. Clique em "Baixar página de teste 100x150".
+2. Abra o PDF e confirme dimensões 100x150mm.

@@ -1,45 +1,55 @@
-ETIQUETA SHOPEE — VALUE (PREMIUM)
+﻿# Conversor de Etiquetas Shopee (Value)
 
-O que esta versão resolve:
-- Layout premium (dark + laranja Value) com duas colunas: controles à esquerda e preview à direita
-- Botão “Processar” habilita/desabilita corretamente (antes ficava travado)
-- Status com cores (ok/aviso/erro) e preview mais limpo
-- Barra de progresso por página (fica claro em qual página está)
-- Preview com modo Compacto/Grande + Tela cheia (modal)
-- Clique em qualquer etiqueta do preview para abrir em tela cheia
-- Atalhos: Ctrl+Enter (Processar) e Ctrl+S (Baixar PDF)
-- Detecta quando está dentro de iframe (Elementor) e esconde o topo automaticamente
+Ferramenta web para converter PDFs A4 de etiquetas Shopee em um PDF final 100x150mm,
+pronto para impressao em impressora termica, preservando vetores (QR e barcode nítidos).
 
-Arquivos:
-- index.html
-- etiquetas.css
-- etiquetas.js
+## Principais recursos
+- Dois modos: "Etiqueta com checklist" e "Etiqueta padrão".
+- Processamento no navegador com pdf-lib (sem rasterizacao).
+- Status e progresso com ETA e cancelamento.
+- Pre-visualizacao com miniaturas e visualizador.
+- Auto impressao (opcional) e pagina de teste 100x150mm.
+- Download rapido do PDF final.
 
-Como usar (standalone):
-1) Abra o arquivo index.html no navegador (ou hospede em qualquer servidor).
-2) Selecione o PDF da Shopee.
-3) Escolha o preset e clique em “Processar”.
-4) Clique em “Baixar PDF”.
+## Como usar
+1. Abra `index.html` em um servidor local (recomendado).
+2. Selecione o PDF de entrada.
+3. Escolha o modo desejado.
+4. Clique em "Gerar etiquetas".
+5. Baixe o PDF 100x150 ou imprima.
 
-Como colocar no WordPress (Elementor) — recomendado:
-1) Hospede esta pasta em um lugar público no seu próprio domínio, por exemplo:
-   /wp-content/uploads/ferramentas/etiqueta/
-2) A URL final precisa apontar para: .../etiqueta/index.html
-3) No Elementor, use um widget HTML e cole um iframe assim:
+### Servidor local (recomendado)
+No Windows, voce pode usar o Python:
 
-<iframe
-  src="https://SEU-DOMINIO/wp-content/uploads/ferramentas/etiqueta/index.html"
-  style="width:100%;height:980px;border:0;border-radius:22px;overflow:hidden"
-  loading="lazy"
-  referrerpolicy="no-referrer"
-></iframe>
+```
+python -m http.server 5500
+```
 
-Dicas:
-- Impressão: use escala 100% (não “ajustar/encaixar na página”).
-- Se o PDF vier em 4 por folha, use o preset “A4 (4 por página)”.
-- Para alterar a cor do laranja, edite no CSS (variáveis no topo):
-  --accent e --accent2
+Depois acesse `http://localhost:5500` no navegador.
 
-Usabilidade:
-- Se quiser ver mais etiquetas na tela: use “Compacto”.
-- Para checar recorte com calma: use “Grande” ou “Tela cheia”.
+> Abrir o arquivo direto (file://) costuma funcionar, mas alguns navegadores
+> podem bloquear o worker/preview. O servidor local garante tudo funcionando.
+
+## Regras de saida
+- Paginas finais em 100x150mm, 1 etiqueta por pagina.
+- Modo "Etiqueta padrão": 4 etiquetas por pagina de entrada (2x2).
+- Modo "Etiqueta com checklist": 2 etiquetas por pagina (topo 150mm).
+
+## Estrutura do projeto
+- `index.html`
+- `etiquetas.js`
+- `src/styles/base.css`
+- `src/styles/components.css`
+- `vendor/pdf-lib.min.js`
+
+## Dicas de impressao
+- Use escala 100% (nao ajustar/encaixar na pagina).
+- Selecione papel 100x150mm na impressora termica.
+- Use a "pagina de teste 100x150" para conferir margens.
+
+## Solucao de problemas
+- "Arquivo invalido": verifique se o arquivo e um PDF valido.
+- "PDF protegido por senha": desbloqueie e envie novamente.
+- "Falha ao gerar": tente novamente; para PDFs grandes, use servidor local.
+
+Desenvolvido por iury

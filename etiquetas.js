@@ -1,1362 +1,1341 @@
-/* Etiqueta Shopee \u2014 Value (v3)
- * - UI premium (Value)
- * - Bot\xe3o "Processar" habilita corretamente
- * - Detecta embed (Elementor/iframe) e simplifica header
- * - Worker do PDF.js configurado
- * - Preset A4 (2 lado a lado) para ficar igual ao modelo do Shopee
- */
+﻿(() => {
+  'use strict';
 
-(() => {
+  const MM_TO_PT = 2.834645669;
+  const LABEL_WIDTH_MM = 100;
+  const LABEL_HEIGHT_MM = 150;
+  const LABEL_WIDTH_PT = LABEL_WIDTH_MM * MM_TO_PT;
+  const LABEL_HEIGHT_PT = LABEL_HEIGHT_MM * MM_TO_PT;
   const PDFJS_VERSION = '2.14.305';
+  const PDFJS_WORKER = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${PDFJS_VERSION}/pdf.worker.min.js`;
+  const PDF_LIB_URL = './vendor/pdf-lib.min.js';
+  const MAX_THUMBS = 6;
 
-  const els = {
-    pdfInput: document.getElementById('pdfInput'),
-    dropZone: document.getElementById('dropZone'),
-    btnPick: document.getElementById('btnPick'),
-    btnClear: document.getElementById('btnClear'),
-    fileName: document.getElementById('fileName'),
-    fileMeta: document.getElementById('fileMeta'),
-    preset: document.getElementById('preset'),
-    presetChips: document.getElementById('presetChips'),
-    btnProcess: document.getElementById('btnProcess'),
-    btnDownload: document.getElementById('btnDownload'),
-    btnPrint: document.getElementById('btnPrint'),
-    autoPrint: document.getElementById('autoPrint'),
-    status: document.getElementById('status'),
-    meta: document.getElementById('meta'),
-    counter: document.getElementById('counter'),
-    preview: document.getElementById('preview'),
-    btnViewCompact: document.getElementById('btnViewCompact'),
-    btnViewLarge: document.getElementById('btnViewLarge'),
-    btnFullscreen: document.getElementById('btnFullscreen'),
-    progressWrap: document.getElementById('progressWrap'),
-    progressText: document.getElementById('progressText'),
-    progressPct: document.getElementById('progressPct'),
-    progressFill: document.getElementById('progressFill'),
+  const MODES = [
+    { id: 'checklist', label: 'Etiqueta com checklist', perPage: 2 },
+    { id: 'standard', label: 'Etiqueta padrão', perPage: 4 },
+  ];
 
-    // Stats
-    statsBox: document.getElementById('statsBox'),
-    statTotal: document.getElementById('statTotal'),
-    statPages: document.getElementById('statPages'),
-    statTime: document.getElementById('statTime'),
+  const DEFAULT_MODE_ID = MODES[0].id;
 
-    previewModal: document.getElementById('previewModal'),
-    modalPreview: document.getElementById('modalPreview'),
-    modalClose: document.getElementById('modalClose'),
-    modalCols1: document.getElementById('modalCols1'),
-    modalCols2: document.getElementById('modalCols2'),
-    modalCounter: document.getElementById('modalCounter'),
-
-    viewerModal: document.getElementById('viewerModal'),
-    viewerBody: document.getElementById('viewerBody'),
-    viewerStage: document.getElementById('viewerStage'),
-    viewerImg: document.getElementById('viewerImg'),
-    viewerCounter: document.getElementById('viewerCounter'),
-    viewerZoomPct: document.getElementById('viewerZoomPct'),
-    viewerFit: document.getElementById('viewerFit'),
-    viewer100: document.getElementById('viewer100'),
-    viewerZoomIn: document.getElementById('viewerZoomIn'),
-    viewerZoomOut: document.getElementById('viewerZoomOut'),
-    viewerPrev: document.getElementById('viewerPrev'),
-    viewerNext: document.getElementById('viewerNext'),
-    viewerClose: document.getElementById('viewerClose'),
-
-    toasts: document.getElementById('toasts'),
-    steps: Array.from(document.querySelectorAll('.stepper .step')),
+  const ERROR_MESSAGES = {
+    invalidFile: 'Arquivo inválido',
+    encrypted: 'PDF protegido por senha',
+    generic: 'Falha ao gerar, tente novamente',
   };
 
-  // libs
-  let pdfjsLib;
-  let jsPDF;
+  const OUTPUT_FILE_PREFIX = 'etiquetas_100x150';
 
   const state = {
-    labels: [],        // {dataUrl, wPx, hPx}
-    presetKey: '',
-    libsReady: false,
+    file: null,
+    modeId: DEFAULT_MODE_ID,
+    modeTouched: false,
+    suggestedModeId: '',
     processing: false,
-    previewMode: 'compact',
-    modalOpen: false,
-    modalCols: 2,
-    processStartTime: 0,
-    lastPdfDoc: null,  // para reutilizar no print
-
-    viewerOpen: false,
-    viewerIdx: 0,
-    viewerZoom: 1,
-    viewerMode: 'fit', // fit | 100 | custom
+    cancelRequested: false,
+    inputPages: 0,
+    outputPages: 0,
+    outputBytes: null,
+    outputBlobUrl: '',
+    previewPdf: null,
+    viewerPage: 1,
+    viewerScale: 1,
+    processStart: 0,
   };
 
-  const presets = {
-    // Entrada A4 com 2 etiquetas (lado a lado) -> Sa\xedda A4 com 2 etiquetas (lado a lado no topo)
-    'shopee_a4_2up_to_a4_2up_side': {
-      label: 'Shopee \u2014 A4 (2 por p\xe1gina) \u2192 A4 (2 lado a lado)',
-      cols: 2,
-      rows: 1,
-      output: 'a4',
-      pack: 'a4_2up_side_top',
-    },
+  function resetOutput() {
+    state.inputPages = 0;
+    state.outputPages = 0;
+    state.outputBytes = null;
+    state.outputBlobUrl = '';
+  }
 
-    // Entrada A4 com 4 etiquetas -> Sa\xedda A4 com 2 etiquetas lado a lado
-    'shopee_a4_4up_to_a4_2up_side': {
-      label: 'Shopee \u2014 A4 (4 por p\xe1gina) \u2192 A4 (2 lado a lado)',
-      cols: 2,
-      rows: 2,
-      output: 'a4',
-      pack: 'a4_2up_side_top',
-    },
+  const dom = {
+    modeSelect: document.getElementById('modeSelect'),
+    modeHint: document.getElementById('modeHint'),
+    fileInput: document.getElementById('fileInput'),
+    dropZone: document.getElementById('dropZone'),
+    btnPick: document.getElementById('btnPick'),
+    fileName: document.getElementById('fileName'),
+    fileSize: document.getElementById('fileSize'),
+    autoPrint: document.getElementById('autoPrint'),
+    btnGenerate: document.getElementById('btnGenerate'),
+    btnCancel: document.getElementById('btnCancel'),
+    btnDownload: document.getElementById('btnDownload'),
+    btnOpenPreview: document.getElementById('btnOpenPreview'),
+    btnTestPage: document.getElementById('btnTestPage'),
+    statusText: document.getElementById('statusText'),
+    progressText: document.getElementById('progressText'),
+    progressFill: document.getElementById('progressFill'),
+    elapsedTime: document.getElementById('elapsedTime'),
+    etaText: document.getElementById('etaText'),
+    previewFrame: document.getElementById('previewFrame'),
+    previewEmpty: document.getElementById('previewEmpty'),
+    previewThumbs: document.getElementById('previewThumbs'),
+    summary: document.getElementById('summary'),
+    summaryMode: document.getElementById('summaryMode'),
+    summaryInput: document.getElementById('summaryInput'),
+    summaryOutput: document.getElementById('summaryOutput'),
+    toasts: document.getElementById('toastStack'),
 
-    // Entrada A4 4up -> Sa\xedda A6 (1 por p\xe1gina)
-    'shopee_a4_4up_to_a6': {
-      label: 'Shopee \u2014 A4 (4 por p\xe1gina) \u2192 A6 (1 por p\xe1gina)',
-      cols: 2,
-      rows: 2,
-      output: 'a6',
-      pack: 'single',
-    },
-
-    // Entrada 10x15 (1 por p\xe1gina) -> Sa\xedda A4 (2 empilhadas)
-    'label_10x15_to_a4_2up_stack': {
-      label: '10x15 (1 por p\xe1gina) \u2192 A4 (2 empilhadas)',
-      cols: 1,
-      rows: 1,
-      output: 'a4',
-      pack: 'a4_2up_stack',
-    },
-
-    // Entrada 10x15 (1 por p\xe1gina) -> Sa\xedda A4 (1 centralizada)
-    'label_10x15_to_a4_1up': {
-      label: '10x15 (1 por p\xe1gina) \u2192 A4 (1 centralizada)',
-      cols: 1,
-      rows: 1,
-      output: 'a4',
-      pack: 'a4_1up_center',
-    },
+    viewerModal: document.getElementById('viewerModal'),
+    viewerCanvas: document.getElementById('viewerCanvas'),
+    viewerClose: document.getElementById('viewerClose'),
+    viewerPrev: document.getElementById('viewerPrev'),
+    viewerNext: document.getElementById('viewerNext'),
+    viewerZoomIn: document.getElementById('viewerZoomIn'),
+    viewerZoomOut: document.getElementById('viewerZoomOut'),
+    viewerScale: document.getElementById('viewerScale'),
   };
+
+  let pdfjsLib = null;
+  let pdfWorker = null;
+
+  function validatePdfFile(file) {
+    if (!file) {
+      return { ok: false, message: ERROR_MESSAGES.invalidFile };
+    }
+
+    const name = String(file.name || '');
+    const hasPdfType = file.type === 'application/pdf' || name.toLowerCase().endsWith('.pdf');
+    const hasSize = Number.isFinite(file.size) && file.size > 0;
+
+    if (!hasPdfType || !hasSize) {
+      return { ok: false, message: ERROR_MESSAGES.invalidFile };
+    }
+
+    return { ok: true, message: '' };
+  }
+
+  function getPdfLib() {
+    const lib = window.PDFLib;
+    if (!lib || !lib.PDFDocument) {
+      throw new Error('PDFLib não carregou.');
+    }
+    return lib;
+  }
+
+  async function loadPdfDocument(file) {
+    const { PDFDocument } = getPdfLib();
+    const bytes = await file.arrayBuffer();
+
+    try {
+      const pdfDoc = await PDFDocument.load(bytes, { ignoreEncryption: false });
+      const pages = pdfDoc.getPages();
+      const sizes = pages.map((page) => page.getSize());
+      return { pdfDoc, pages, sizes, pageCount: pages.length };
+    } catch (err) {
+      const message = String(err?.message || err || '').toLowerCase();
+      if (message.includes('encrypted') || message.includes('password')) {
+        const error = new Error(ERROR_MESSAGES.encrypted);
+        error.code = 'encrypted';
+        throw error;
+      }
+      throw err;
+    }
+  }
+
+  function getSlicesForPage(size, modeId) {
+    const width = Number(size?.width) || 0;
+    const height = Number(size?.height) || 0;
+
+    if (width <= 0 || height <= 0) {
+      return [];
+    }
+
+    if (modeId === 'standard') {
+      const halfW = width / 2;
+      const halfH = height / 2;
+      return [
+        { x: 0, y: halfH, w: halfW, h: halfH },
+        { x: halfW, y: halfH, w: halfW, h: halfH },
+        { x: 0, y: 0, w: halfW, h: halfH },
+        { x: halfW, y: 0, w: halfW, h: halfH },
+      ];
+    }
+
+    if (modeId === 'checklist') {
+      const halfW = width / 2;
+      const sliceH = Math.min(height, LABEL_HEIGHT_PT);
+      const topSliceY = Math.max(0, height - sliceH);
+      return [
+        { x: 0, y: topSliceY, w: halfW, h: sliceH },
+        { x: halfW, y: topSliceY, w: halfW, h: sliceH },
+      ];
+    }
+
+    return [];
+  }
+
+  function normalizeRotation(angle) {
+    const value = Number(angle) || 0;
+    const normalized = ((value % 360) + 360) % 360;
+    if (normalized === 90 || normalized === 180 || normalized === 270) return normalized;
+    return 0;
+  }
+
+  function getDisplaySize({ width, height }, rotation) {
+    if (rotation === 90 || rotation === 270) {
+      return { width: height, height: width };
+    }
+    return { width, height };
+  }
+
+  function mapSliceToUnrotated(slice, pageW, pageH, rotation) {
+    if (rotation === 90) {
+      return {
+        x: pageW - (slice.y + slice.h),
+        y: slice.x,
+        w: slice.h,
+        h: slice.w,
+      };
+    }
+    if (rotation === 180) {
+      return {
+        x: pageW - (slice.x + slice.w),
+        y: pageH - (slice.y + slice.h),
+        w: slice.w,
+        h: slice.h,
+      };
+    }
+    if (rotation === 270) {
+      return {
+        x: slice.y,
+        y: pageH - (slice.x + slice.w),
+        w: slice.h,
+        h: slice.w,
+      };
+    }
+    return slice;
+  }
+
+  function getRotationPlacement(rotation, scaledW, scaledH, x0, y0) {
+    if (rotation === 90) {
+      return { x: x0 + scaledH, y: y0 };
+    }
+    if (rotation === 180) {
+      return { x: x0 + scaledW, y: y0 + scaledH };
+    }
+    if (rotation === 270) {
+      return { x: x0, y: y0 + scaledW };
+    }
+    return { x: x0, y: y0 };
+  }
+
+  const OUTPUT_PAGE = [LABEL_WIDTH_PT, LABEL_HEIGHT_PT];
+
+  function fitInsideBox(srcW, srcH, boxW, boxH) {
+    const safeW = Math.max(1, srcW);
+    const safeH = Math.max(1, srcH);
+    const scale = Math.min(boxW / safeW, boxH / safeH);
+    return {
+      scale,
+      width: safeW * scale,
+      height: safeH * scale,
+    };
+  }
+
+  function toBoundingBox(slice) {
+    return {
+      left: slice.x,
+      bottom: slice.y,
+      right: slice.x + slice.w,
+      top: slice.y + slice.h,
+    };
+  }
+
+  async function embedSlice(outDoc, sourceDoc, pageIndex, slice) {
+    const srcPage = sourceDoc.getPages()[pageIndex];
+    const box = toBoundingBox(slice);
+
+    try {
+      return await outDoc.embedPage(srcPage, box);
+    } catch (err) {
+      const [copiedPage] = await outDoc.copyPages(sourceDoc, [pageIndex]);
+      return outDoc.embedPage(copiedPage, box);
+    }
+  }
+
+  function yieldToUI() {
+    return new Promise((resolve) => {
+      if (typeof requestAnimationFrame === 'function') {
+        requestAnimationFrame(() => resolve());
+        return;
+      }
+      setTimeout(() => resolve(), 0);
+    });
+  }
+
+  async function renderOutputPdf({ sourceDoc, modeId, onProgress, shouldCancel }) {
+    const { PDFDocument, degrees } = getPdfLib();
+    const outDoc = await PDFDocument.create();
+    const pages = sourceDoc.getPages();
+
+    for (let pageIndex = 0; pageIndex < pages.length; pageIndex += 1) {
+      if (typeof shouldCancel === 'function' && shouldCancel()) {
+        const error = new Error('cancelled');
+        error.code = 'cancelled';
+        throw error;
+      }
+
+      const page = pages[pageIndex];
+      const { width, height } = page.getSize();
+      const rotation = normalizeRotation(page.getRotation()?.angle);
+      const displaySize = getDisplaySize({ width, height }, rotation);
+      const slices = getSlicesForPage(displaySize, modeId);
+
+      for (const slice of slices) {
+        const mappedSlice = mapSliceToUnrotated(slice, width, height, rotation);
+        const embedded = await embedSlice(outDoc, sourceDoc, pageIndex, mappedSlice);
+        const outPage = outDoc.addPage(OUTPUT_PAGE);
+        const fit = fitInsideBox(slice.w, slice.h, LABEL_WIDTH_PT, LABEL_HEIGHT_PT);
+        const x0 = (LABEL_WIDTH_PT - fit.width) / 2;
+        const y0 = (LABEL_HEIGHT_PT - fit.height) / 2;
+        const scaledW = mappedSlice.w * fit.scale;
+        const scaledH = mappedSlice.h * fit.scale;
+        const placement = getRotationPlacement(rotation, scaledW, scaledH, x0, y0);
+
+        outPage.drawPage(embedded, {
+          x: placement.x,
+          y: placement.y,
+          xScale: fit.scale,
+          yScale: fit.scale,
+          rotate: rotation ? degrees(rotation) : undefined,
+        });
+      }
+
+      if (typeof onProgress === 'function') {
+        onProgress({ phase: 'page', current: pageIndex + 1, total: pages.length });
+      }
+
+      await yieldToUI();
+    }
+
+    if (typeof onProgress === 'function') {
+      onProgress({ phase: 'finalize' });
+    }
+
+    const pdfBytes = await outDoc.save();
+    return { pdfBytes, pageCount: outDoc.getPageCount() };
+  }
+
+  function createPdfBlobUrl(bytes) {
+    const blob = new Blob([bytes], { type: 'application/pdf' });
+    return URL.createObjectURL(blob);
+  }
+
+  function revokePdfBlobUrl(url) {
+    if (url) {
+      URL.revokeObjectURL(url);
+    }
+  }
+
+  function downloadPdfFromUrl(url, filename) {
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = filename;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+  }
+
+  let timerId = null;
+  let startTime = 0;
+
+  function formatSeconds(seconds) {
+    if (!Number.isFinite(seconds) || seconds < 0) return '0s';
+    if (seconds < 60) return `${Math.round(seconds)}s`;
+    const minutes = Math.floor(seconds / 60);
+    const rem = Math.round(seconds % 60);
+    return `${minutes}m ${rem}s`;
+  }
+
+  function resetTimer() {
+    if (dom.elapsedTime) dom.elapsedTime.textContent = '0s';
+    if (dom.etaText) dom.etaText.textContent = '—';
+    startTime = 0;
+    state.processStart = 0;
+  }
+
+  function startTimer() {
+    startTime = Date.now();
+    state.processStart = startTime;
+    if (timerId) clearInterval(timerId);
+    timerId = setInterval(() => {
+      const elapsed = (Date.now() - startTime) / 1000;
+      if (dom.elapsedTime) dom.elapsedTime.textContent = formatSeconds(elapsed);
+    }, 500);
+  }
+
+  function stopTimer() {
+    if (timerId) {
+      clearInterval(timerId);
+      timerId = null;
+    }
+  }
+
+  function updateEta(current, total) {
+    if (!dom.etaText) return;
+    if (!state.processStart || !current || !total) {
+      dom.etaText.textContent = '—';
+      return;
+    }
+    const elapsed = (Date.now() - state.processStart) / 1000;
+    const perPage = elapsed / Math.max(1, current);
+    const remaining = Math.max(0, (total - current) * perPage);
+    dom.etaText.textContent = formatSeconds(remaining);
+  }
 
   function setStatus(text, kind = 'idle') {
-    els.status.textContent = text;
-    els.status.classList.remove('status--idle', 'status--ok', 'status--warn', 'status--err');
-    els.status.classList.add(`status--${kind}`);
+    if (!dom.statusText) return;
+    dom.statusText.textContent = text;
+    dom.statusText.classList.remove('status-text--idle', 'status-text--ok', 'status-text--warn', 'status-text--err');
+    dom.statusText.classList.add(`status-text--${kind}`);
   }
 
-  function setMeta(text) {
-    els.meta.textContent = text || '';
+  function setProgress({ text = '', current = 0, total = 0 } = {}) {
+    if (dom.progressText && text) {
+      dom.progressText.textContent = text;
+    }
+    if (!dom.progressFill) return;
+    const safeTotal = Math.max(1, Number(total) || 1);
+    const safeCurrent = Math.min(safeTotal, Math.max(0, Number(current) || 0));
+    const pct = Math.round((safeCurrent / safeTotal) * 100);
+    dom.progressFill.style.width = `${pct}%`;
   }
 
-  function syncBodyLock() {
-    const open = !!(state.modalOpen || state.viewerOpen);
+  function resetProgress(text = '—') {
+    if (dom.progressText) dom.progressText.textContent = text;
+    if (dom.progressFill) dom.progressFill.style.width = '0%';
+  }
+
+  function toast(message, type = 'info') {
+    if (!dom.toasts || !message) return;
+    const item = document.createElement('div');
+    const safeType = ['info', 'ok', 'warn', 'err'].includes(type) ? type : 'info';
+    item.className = `toast toast--${safeType}`;
+    item.textContent = message;
+
+    dom.toasts.appendChild(item);
+    requestAnimationFrame(() => item.classList.add('toast--show'));
+
+    const ttl = safeType === 'err' ? 4200 : 2800;
+    window.setTimeout(() => {
+      item.classList.remove('toast--show');
+      item.addEventListener('transitionend', () => item.remove(), { once: true });
+    }, ttl);
+  }
+
+  function initPdfJs() {
+    const lib = window.pdfjsLib || window['pdfjsLib'];
+    if (!lib) {
+      if (dom.previewThumbs) dom.previewThumbs.hidden = true;
+      return;
+    }
+    pdfjsLib = lib;
+    if (pdfjsLib.GlobalWorkerOptions) {
+      pdfjsLib.GlobalWorkerOptions.workerSrc = PDFJS_WORKER;
+    }
+  }
+
+  function setBodyModal(open) {
     document.body.classList.toggle('is-modal-open', open);
   }
 
-  function updateCounters() {
-    const total = state.labels.length;
-    const shown = Math.min(8, total);
-    if (els.counter) els.counter.textContent = total ? `Exibindo ${shown}/${total}` : '';
-    if (els.modalCounter) els.modalCounter.textContent = total ? `${total} etiquetas` : '';
-    if (els.viewerCounter && state.viewerOpen) {
-      els.viewerCounter.textContent = total ? `${state.viewerIdx + 1}/${total}` : '—';
+  function setPreview(url) {
+    if (dom.previewFrame) {
+      dom.previewFrame.hidden = !url;
+      dom.previewFrame.src = url || 'about:blank';
+    }
+    if (dom.previewEmpty) {
+      dom.previewEmpty.hidden = !!url;
+    }
+    if (dom.previewThumbs) {
+      dom.previewThumbs.hidden = !url;
+    }
+    if (dom.btnOpenPreview) {
+      dom.btnOpenPreview.disabled = !url || state.processing;
     }
   }
 
-  function clearPreview() {
-    els.preview.innerHTML = '<div class="empty">Selecione um PDF e clique em <b>Processar</b>.</div>';
+  function clearPreviewThumbs() {
+    if (dom.previewThumbs) dom.previewThumbs.innerHTML = '';
+    state.previewPdf = null;
   }
 
-  function setPreviewMode(mode) {
-    state.previewMode = mode === 'large' ? 'large' : 'compact';
-    els.preview.classList.remove('is-compact', 'is-large');
-    els.preview.classList.add(state.previewMode === 'large' ? 'is-large' : 'is-compact');
+  async function renderThumbsFromBytes(bytes) {
+    if (!pdfjsLib || !dom.previewThumbs || !bytes) return;
+    clearPreviewThumbs();
 
-    if (els.btnViewCompact) els.btnViewCompact.classList.toggle('is-active', state.previewMode === 'compact');
-    if (els.btnViewLarge) els.btnViewLarge.classList.toggle('is-active', state.previewMode === 'large');
+    try {
+      const loading = pdfjsLib.getDocument({ data: bytes });
+      const pdf = await loading.promise;
+      state.previewPdf = pdf;
+      const total = Math.min(MAX_THUMBS, pdf.numPages);
+
+      for (let pageIndex = 1; pageIndex <= total; pageIndex += 1) {
+        const page = await pdf.getPage(pageIndex);
+        const viewport = page.getViewport({ scale: 0.35 });
+        const canvas = document.createElement('canvas');
+        const ctx = canvas.getContext('2d');
+        if (!ctx) continue;
+        canvas.width = Math.floor(viewport.width);
+        canvas.height = Math.floor(viewport.height);
+        ctx.save();
+        ctx.fillStyle = '#ffffff';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        ctx.restore();
+        await page.render({ canvasContext: ctx, viewport }).promise;
+
+        const item = document.createElement('button');
+        item.type = 'button';
+        item.className = 'thumb';
+        item.dataset.page = String(pageIndex);
+
+        const badge = document.createElement('span');
+        badge.className = 'thumb-badge';
+        badge.textContent = `#${pageIndex}`;
+
+        item.appendChild(canvas);
+        item.appendChild(badge);
+        dom.previewThumbs.appendChild(item);
+      }
+    } catch (err) {
+      clearPreviewThumbs();
+    }
   }
 
-  function thumbHtml(lbl, i, { anim = true, delay = 0, badge = true } = {}) {
-    const cls = anim ? 'thumb thumb--anim' : 'thumb';
-    const style = anim ? `style="animation-delay:${delay}ms"` : '';
-    return `
-      <div class="${cls}" data-idx="${i}" role="button" tabindex="0" aria-label="Abrir etiqueta ${i + 1}" ${style}>
-        ${badge ? `<div class="thumbBadge">#${i + 1}</div>` : ''}
-        <img loading="lazy" alt="Etiqueta ${i + 1}" src="${lbl.dataUrl}">
-      </div>
-    `;
+  function openPreview() {
+    if (!state.outputBlobUrl) return;
+    const win = window.open(state.outputBlobUrl, '_blank');
+    if (!win) {
+      toast('Popup bloqueado. Use o botão baixar.', 'warn');
+    }
   }
 
-  function renderThumbs(container, labels, { max = Infinity, badge = true, animated = true } = {}) {
-    if (!labels.length) {
-      container.innerHTML = '<div class="empty">Nada para mostrar ainda.</div>';
+  async function renderViewerPage() {
+    if (!dom.viewerCanvas || !pdfjsLib || !state.outputBytes) return;
+    try {
+      if (!state.previewPdf) {
+        const loading = pdfjsLib.getDocument({ data: state.outputBytes });
+        state.previewPdf = await loading.promise;
+      }
+      const total = state.previewPdf.numPages || 1;
+      state.viewerPage = Math.max(1, Math.min(total, state.viewerPage));
+
+      const page = await state.previewPdf.getPage(state.viewerPage);
+      const viewport = page.getViewport({ scale: state.viewerScale });
+      const canvas = dom.viewerCanvas;
+      const ctx = canvas.getContext('2d');
+      if (!ctx) return;
+      canvas.width = Math.floor(viewport.width);
+      canvas.height = Math.floor(viewport.height);
+      ctx.save();
+      ctx.fillStyle = '#ffffff';
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      ctx.restore();
+      await page.render({ canvasContext: ctx, viewport }).promise;
+
+      if (dom.viewerScale) {
+        dom.viewerScale.textContent = `${Math.round(state.viewerScale * 100)}%`;
+      }
+      if (dom.viewerPrev) dom.viewerPrev.disabled = state.viewerPage <= 1;
+      if (dom.viewerNext) dom.viewerNext.disabled = state.viewerPage >= total;
+    } catch (err) {
+      toast('Falha ao renderizar a pré-visualização. Abrindo PDF...', 'warn');
+      closeViewer();
+      openPreview();
+    }
+  }
+
+  function openViewer(pageIndex) {
+    if (!dom.viewerModal) return;
+    if (!state.outputBytes) {
+      openPreview();
       return;
     }
-    const limit = Math.min(labels.length, max);
-    const html = [];
-    for (let i = 0; i < limit; i++) {
-      html.push(thumbHtml(labels[i], i, { anim: animated, delay: i * 24, badge }));
+    if (!pdfjsLib) {
+      openPreview();
+      return;
     }
-    container.innerHTML = html.join('');
+    state.viewerPage = pageIndex || 1;
+    state.viewerScale = 1.1;
+    dom.viewerModal.hidden = false;
+    setBodyModal(true);
+    renderViewerPage();
   }
 
-  function renderPreview(labels) {
-    renderThumbs(els.preview, labels, { max: 8, badge: true, animated: true });
-    updateCounters();
+  function closeViewer() {
+    if (!dom.viewerModal) return;
+    dom.viewerModal.hidden = true;
+    setBodyModal(false);
   }
 
-  function updateButtons() {
-    const hasFile = !!els.pdfInput.files?.[0];
-    const hasLabels = state.labels.length > 0;
-    els.btnProcess.disabled = !state.libsReady || !hasFile || state.processing;
-    els.btnDownload.disabled = !state.libsReady || state.processing || !hasLabels;
-    if (els.btnPrint) els.btnPrint.disabled = !state.libsReady || state.processing || !hasLabels;
-    if (els.btnClear) els.btnClear.disabled = state.processing || !hasFile;
-    if (els.btnFullscreen) els.btnFullscreen.disabled = state.processing || !hasLabels;
-    if (els.btnViewCompact) els.btnViewCompact.disabled = state.processing;
-    if (els.btnViewLarge) els.btnViewLarge.disabled = state.processing;
-    updateStepper();
-  }
-
-  function disableWhileProcessing(isProcessing) {
-    state.processing = isProcessing;
-    els.btnProcess.textContent = isProcessing ? 'Processando\u2026' : 'Processar';
-    updateButtons();
-  }
-
-  function updateStepper() {
-    if (!els.steps?.length) return;
-
-    const hasFile = !!els.pdfInput.files?.[0];
-    const hasLabels = state.labels.length > 0;
-
-    // 0: nada
-    // 1: arquivo selecionado (preset pronto)
-    // 2: processando
-    // 3: processado
-    let stage = 0;
-    if (hasFile) stage = 1;
-    if (hasFile && state.processing) stage = 2;
-    if (hasFile && !state.processing && hasLabels) stage = 3;
-
-    const set = (step, { active = false, done = false, loading = false } = {}) => {
-      step.classList.remove('is-active', 'is-done', 'is-loading');
-      if (active) step.classList.add('is-active');
-      if (done) step.classList.add('is-done');
-      if (loading) step.classList.add('is-loading');
+  function tryAutoPrint() {
+    if (!dom.autoPrint?.checked || !state.outputBlobUrl) return;
+    const printWindow = window.open(state.outputBlobUrl, '_blank');
+    if (!printWindow) {
+      toast('Popup bloqueado. Abra o PDF e imprima manualmente.', 'warn');
+      return;
+    }
+    const triggerPrint = () => {
+      try {
+        printWindow.focus();
+        printWindow.print();
+      } catch (err) {
+        toast('Falha ao abrir a impressão automática.', 'warn');
+      }
     };
-
-    const s1 = els.steps.find(s => s.dataset.step === '1');
-    const s2 = els.steps.find(s => s.dataset.step === '2');
-    const s3 = els.steps.find(s => s.dataset.step === '3');
-
-    if (stage === 0) {
-      if (s1) set(s1, { active: true });
-      if (s2) set(s2, {});
-      if (s3) set(s3, {});
-      return;
-    }
-
-    if (stage === 1) {
-      if (s1) set(s1, { done: true });
-      if (s2) set(s2, { active: true });
-      if (s3) set(s3, {});
-      return;
-    }
-
-    if (stage === 2) {
-      if (s1) set(s1, { done: true });
-      if (s2) set(s2, { done: true });
-      if (s3) set(s3, { active: true, loading: true });
-      return;
-    }
-
-    // stage === 3
-    if (s1) set(s1, { done: true });
-    if (s2) set(s2, { done: true });
-    if (s3) set(s3, { done: true });
-  }
-
-  function updatePresetChips() {
-    if (!els.presetChips) return;
-    const preset = getPreset();
-    if (!preset) {
-      els.presetChips.innerHTML = '';
-      return;
-    }
-
-    const label = String(preset.label || '').trim();
-    const parts = label.split('→').map(s => s.trim()).filter(Boolean);
-    const left = parts[0] || label;
-    const right = parts[1] || '';
-
-    let fonte = '';
-    let entrada = left;
-    if (left.includes('—')) {
-      const s = left.split('—').map(x => x.trim()).filter(Boolean);
-      fonte = s[0] || '';
-      entrada = s.slice(1).join('—').trim() || left;
-    }
-
-    const saida = right || '';
-
-    const chips = [];
-    if (fonte) chips.push(`<span class="chip chip--soft">${escapeHtml(fonte)}</span>`);
-    if (entrada) chips.push(`<span class="chip chip--outline">Entrada: ${escapeHtml(entrada)}</span>`);
-    if (saida) chips.push(`<span class="chip chip--accent">Saída: ${escapeHtml(saida)}</span>`);
-    chips.push(`<span class="chip chip--soft">Final: ${escapeHtml(String(preset.output || '').toUpperCase())}</span>`);
-
-    els.presetChips.innerHTML = chips.join('');
-  }
-
-  function escapeHtml(str) {
-    return String(str)
-      .replaceAll('&', '&amp;')
-      .replaceAll('<', '&lt;')
-      .replaceAll('>', '&gt;')
-      .replaceAll('"', '&quot;')
-      .replaceAll("'", '&#039;');
-  }
-
-  function getPreset() {
-    const key = els.preset.value;
-    state.presetKey = key;
-    return presets[key];
-  }
-
-  async function loadLibs() {
-    // Espera os scripts defer carregarem
-    pdfjsLib = window['pdfjsLib'];
-    jsPDF = window['jspdf']?.jsPDF;
-
-    if (!pdfjsLib) throw new Error('pdf.js n\xe3o carregou (verifique conex\xe3o/console).');
-    if (!jsPDF) throw new Error('jsPDF n\xe3o carregou (verifique conex\xe3o/console).');
-
-    // Worker
-    pdfjsLib.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${PDFJS_VERSION}/pdf.worker.min.js`;
-  }
-
-  function fileToArrayBuffer(file) {
-    return new Promise((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onload = () => resolve(reader.result);
-      reader.onerror = () => reject(new Error('Falha ao ler o arquivo.'));
-      reader.readAsArrayBuffer(file);
-    });
+    printWindow.onload = () => {
+      setTimeout(triggerPrint, 250);
+    };
+    setTimeout(triggerPrint, 1200);
   }
 
   function formatBytes(bytes) {
     if (!Number.isFinite(bytes) || bytes <= 0) return '0 B';
     const units = ['B', 'KB', 'MB', 'GB'];
-    let i = 0;
-    let v = bytes;
-    while (v >= 1024 && i < units.length - 1) {
-      v /= 1024;
-      i++;
+    let value = bytes;
+    let idx = 0;
+    while (value >= 1024 && idx < units.length - 1) {
+      value /= 1024;
+      idx += 1;
     }
-    const dp = i === 0 ? 0 : (i === 1 ? 0 : 1);
-    return `${v.toFixed(dp)} ${units[i]}`;
+    const digits = idx === 0 ? 0 : idx === 1 ? 0 : 1;
+    return `${value.toFixed(digits)} ${units[idx]}`;
   }
 
-  function setFileUI(file) {
-    if (!els.fileName || !els.fileMeta || !els.btnClear) return;
-    if (file) {
-      els.fileName.textContent = file.name;
-      els.fileMeta.textContent = `${formatBytes(file.size)} • PDF`;
-      els.btnClear.disabled = false;
-    } else {
-      els.fileName.textContent = 'Nenhum arquivo selecionado';
-      els.fileMeta.textContent = 'Arraste e solte aqui • PDF';
-      els.btnClear.disabled = true;
-    }
+  function getModeById(modeId) {
+    return MODES.find((mode) => mode.id === modeId) || MODES[0];
   }
 
-  function setPreviewLoading(text = 'Processando…') {
-    els.preview.innerHTML = `<div class="loading"><span class="spinner" aria-hidden="true"></span>${text}</div>`;
+  function setModeHint(text) {
+    if (!dom.modeHint) return;
+    dom.modeHint.innerHTML = text;
   }
 
-  function setProgress({ text = 'Processando…', current = 0, total = 1 } = {}) {
-    if (!els.progressWrap || !els.progressText || !els.progressPct || !els.progressFill) return;
-    const t = Math.max(1, Number(total) || 1);
-    const c = Math.min(t, Math.max(0, Number(current) || 0));
-    const pct = Math.round((c / t) * 100);
-    els.progressWrap.hidden = false;
-    els.progressText.textContent = text;
-    els.progressPct.textContent = `${pct}%`;
-    els.progressFill.style.width = `${pct}%`;
+  function applyMode(modeId) {
+    const mode = getModeById(modeId);
+    state.modeId = mode.id;
+    if (dom.modeSelect) dom.modeSelect.value = mode.id;
   }
 
-  function hideProgress() {
-    if (!els.progressWrap) return;
-    els.progressWrap.hidden = true;
-    if (els.progressFill) els.progressFill.style.width = '0%';
-  }
-
-  function toast(message, kind = 'ok') {
-    if (!els.toasts) return;
-    const type = (kind === 'warn' || kind === 'err') ? kind : 'ok';
-
-    const el = document.createElement('div');
-    el.className = `toast toast--${type}`;
-
-    const icon = document.createElement('div');
-    icon.className = 'toastIcon';
-    icon.textContent = type === 'ok' ? '✓' : (type === 'warn' ? '!' : '×');
-
-    const text = document.createElement('div');
-    text.className = 'toastText';
-    text.textContent = String(message || '').trim();
-
-    el.appendChild(icon);
-    el.appendChild(text);
-    els.toasts.appendChild(el);
-
-    window.setTimeout(() => {
-      el.style.opacity = '0';
-      el.style.transform = 'translateY(10px)';
-      el.style.transition = 'opacity .18s ease, transform .18s ease';
-      window.setTimeout(() => el.remove(), 220);
-    }, 2800);
-  }
-
-  function setModalCols(cols) {
-    state.modalCols = cols === 1 ? 1 : 2;
-    if (!els.modalPreview) return;
-    els.modalPreview.classList.remove('is-cols-1', 'is-cols-2');
-    els.modalPreview.classList.add(state.modalCols === 1 ? 'is-cols-1' : 'is-cols-2');
-    if (els.modalCols1) els.modalCols1.classList.toggle('is-active', state.modalCols === 1);
-    if (els.modalCols2) els.modalCols2.classList.toggle('is-active', state.modalCols === 2);
-  }
-
-  function openModal(focusIdx = null) {
-    if (!els.previewModal || !els.modalPreview) return;
-    if (!state.labels.length) {
-      toast('Nada para visualizar ainda.', 'warn');
-      return;
+  function guessModeFromMeta(fileName, size) {
+    const name = String(fileName || '').toLowerCase();
+    if (name.includes('checklist') || name.includes('check') || name.includes('lista')) {
+      return { id: 'checklist', reason: 'nome do arquivo sugere checklist' };
     }
 
-    state.modalOpen = true;
-    syncBodyLock();
-    els.previewModal.hidden = false;
-    setModalCols(state.modalCols || 2);
-    renderThumbs(els.modalPreview, state.labels, { max: Infinity, badge: true, animated: false });
-    updateCounters();
-
-    if (Number.isInteger(focusIdx)) {
-      const target = els.modalPreview.querySelector(`[data-idx="${focusIdx}"]`);
-      if (target) target.scrollIntoView({ block: 'start', behavior: 'auto' });
-    }
-  }
-
-  function closeModal() {
-    if (!els.previewModal) return;
-    state.modalOpen = false;
-    syncBodyLock();
-    els.previewModal.hidden = true;
-  }
-
-  function clamp(n, min, max) {
-    return Math.min(max, Math.max(min, n));
-  }
-
-  function computeFitScale() {
-    if (!els.viewerBody || !els.viewerImg) return 1;
-    const rect = els.viewerBody.getBoundingClientRect();
-    const nw = els.viewerImg.naturalWidth || 1;
-    const nh = els.viewerImg.naturalHeight || 1;
-    // padding interno do viewerBody + uma folga
-    const pad = 56;
-    const fit = Math.min((rect.width - pad) / nw, (rect.height - pad) / nh);
-    return clamp(fit, 0.1, 5);
-  }
-
-  function syncViewerPanMode() {
-    if (!els.viewerBody || !els.viewerImg) return;
-    // se estiver em fit, sempre centraliza.
-    if (state.viewerMode === 'fit') {
-      els.viewerBody.classList.remove('is-pan');
-      return;
-    }
-    // se estiver com zoom maior que o fit, habilita pan natural (top-left)
-    const fit = computeFitScale();
-    const z = Number(state.viewerZoom) || 1;
-    els.viewerBody.classList.toggle('is-pan', z > fit + 0.02);
-  }
-
-  function applyViewerZoom() {
-    const z = clamp(Number(state.viewerZoom) || 1, 0.1, 5);
-    state.viewerZoom = z;
-    // Em vez de transform (que pode "bugar" scroll/centralização em alguns browsers),
-    // ajustamos o tamanho real do <img>.
-    if (els.viewerImg && (els.viewerImg.naturalWidth || els.viewerImg.width)) {
-      const nw = els.viewerImg.naturalWidth || els.viewerImg.width;
-      els.viewerImg.style.width = `${Math.round(nw * z)}px`;
-    }
-    if (els.viewerZoomPct) els.viewerZoomPct.textContent = `${Math.round(z * 100)}%`;
-    syncViewerPanMode();
-    updateCounters();
-  }
-
-  function setViewerMode(mode) {
-    const m = (mode === '100') ? '100' : (mode === 'fit' ? 'fit' : 'custom');
-    state.viewerMode = m;
-    if (els.viewerFit) els.viewerFit.classList.toggle('is-active', m === 'fit');
-    if (els.viewer100) els.viewer100.classList.toggle('is-active', m === '100');
-    if (m === 'fit') state.viewerZoom = computeFitScale();
-    if (m === '100') state.viewerZoom = 1;
-    applyViewerZoom();
-  }
-
-  function zoomBy(mult) {
-    state.viewerMode = 'custom';
-    if (els.viewerFit) els.viewerFit.classList.remove('is-active');
-    if (els.viewer100) els.viewer100.classList.remove('is-active');
-    state.viewerZoom = clamp((Number(state.viewerZoom) || 1) * mult, 0.1, 5);
-    applyViewerZoom();
-  }
-
-  function setViewerImage() {
-    const total = state.labels.length;
-    if (!total || !els.viewerImg) return;
-    const idx = clamp(Number(state.viewerIdx) || 0, 0, total - 1);
-    state.viewerIdx = idx;
-
-    if (els.viewerPrev) els.viewerPrev.disabled = idx <= 0;
-    if (els.viewerNext) els.viewerNext.disabled = idx >= total - 1;
-    if (els.viewerCounter) els.viewerCounter.textContent = `${idx + 1}/${total}`;
-
-    const src = state.labels[idx]?.dataUrl;
-    if (!src) {
-      toast('Não consegui carregar a etiqueta (imagem inválida).', 'err');
-      return;
+    const w = Math.round(size?.width || 0);
+    const h = Math.round(size?.height || 0);
+    const near = (value, target) => Math.abs(value - target) <= 26;
+    const a4W = 595;
+    const a4H = 842;
+    if ((near(w, a4W) && near(h, a4H)) || (near(w, a4H) && near(h, a4W))) {
+      return { id: 'standard', reason: 'tamanho A4 detectado' };
     }
 
-    // evita ícone de imagem quebrada durante troca
-    els.viewerImg.style.width = 'auto';
-    els.viewerImg.src = src;
-
-    els.viewerImg.onload = () => {
-      if (!state.viewerOpen) return;
-      if (state.viewerMode === 'fit') setViewerMode('fit');
-      else applyViewerZoom();
-    };
-
-    els.viewerImg.onerror = () => {
-      if (!state.viewerOpen) return;
-      toast('Falha ao abrir a etiqueta (erro ao carregar imagem).', 'err');
-    };
-
-    updateCounters();
+    return { id: DEFAULT_MODE_ID, reason: 'modo padrão sugerido' };
   }
 
-  function setViewerIndex(idx) {
-    state.viewerIdx = idx;
-    setViewerImage();
-  }
-
-  function openViewer(idx = 0) {
-    if (!els.viewerModal) return;
-    if (!state.labels.length) {
-      toast('Nada para visualizar ainda.', 'warn');
-      return;
-    }
-
-    closeModal();
-
-    state.viewerOpen = true;
-    state.viewerIdx = clamp(Number(idx) || 0, 0, state.labels.length - 1);
-    els.viewerModal.hidden = false;
-    syncBodyLock();
-
-    state.viewerMode = 'fit';
-    state.viewerZoom = 1;
-    setViewerImage();
-  }
-
-  function closeViewer() {
-    if (!els.viewerModal) return;
-    state.viewerOpen = false;
-    els.viewerModal.hidden = true;
-    // evita “ícone quebrado” quando o modal evita o src antigo
-    if (els.viewerImg) {
-      els.viewerImg.removeAttribute('src');
-      els.viewerImg.style.width = 'auto';
-    }
-    syncBodyLock();
-  }
-
-  function setPdfFile(file) {
+  async function suggestMode(file) {
     if (!file) return;
+    setModeHint('Detectando layout...');
+    try {
+      const { pdfDoc, sizes } = await loadPdfDocument(file);
+      const page = pdfDoc.getPages()[0];
+      const rotation = normalizeRotation(page.getRotation()?.angle);
+      const displaySize = getDisplaySize(sizes[0] || page.getSize(), rotation);
+      const suggestion = guessModeFromMeta(file.name, displaySize);
+      state.suggestedModeId = suggestion.id;
+      const mode = getModeById(suggestion.id);
+      setModeHint(`Sugestão: <strong>${mode.label}</strong> — ${suggestion.reason}. Se estiver diferente, ajuste o modo.`);
+      if (!state.modeTouched) {
+        applyMode(suggestion.id);
+      }
+    } catch (err) {
+      if (err?.code === 'encrypted') {
+        setModeHint('PDF protegido por senha. Desbloqueie e tente novamente.');
+      } else {
+        setModeHint('Não foi possível detectar o layout automaticamente.');
+      }
+    }
+  }
+
+  function updateButtons() {
+    const hasFile = !!state.file;
+    const hasOutput = !!state.outputBlobUrl;
+    if (dom.btnGenerate) dom.btnGenerate.disabled = !hasFile || state.processing;
+    if (dom.btnDownload) dom.btnDownload.disabled = !hasOutput || state.processing;
+    if (dom.btnOpenPreview) dom.btnOpenPreview.disabled = !hasOutput || state.processing;
+    if (dom.btnCancel) dom.btnCancel.disabled = !state.processing;
+    if (dom.btnTestPage) dom.btnTestPage.disabled = state.processing;
+  }
+
+  function setFileInfo(file) {
+    if (!dom.fileName || !dom.fileSize) return;
+    if (!file) {
+      dom.fileName.textContent = 'Nenhum arquivo selecionado';
+      dom.fileSize.textContent = '—';
+      return;
+    }
+    dom.fileName.textContent = file.name;
+    dom.fileSize.textContent = formatBytes(file.size);
+  }
+
+  function clearOutput() {
+    setPreview('');
+    clearPreviewThumbs();
+    closeViewer();
+    state.cancelRequested = false;
+    if (state.outputBlobUrl) {
+      revokePdfBlobUrl(state.outputBlobUrl);
+    }
+    resetOutput();
+    resetProgress('—');
+    resetTimer();
+    if (dom.summary) dom.summary.hidden = true;
+    updateButtons();
+  }
+
+  function updateSummary() {
+    const mode = getModeById(state.modeId);
+    if (!dom.summary) return;
+    if (dom.summaryMode) dom.summaryMode.textContent = mode.label;
+    if (dom.summaryInput) dom.summaryInput.textContent = String(state.inputPages || 0);
+    if (dom.summaryOutput) dom.summaryOutput.textContent = String(state.outputPages || 0);
+    dom.summary.hidden = false;
+  }
+
+  function setFileFromInput(file) {
+    state.file = file || null;
+    clearOutput();
+    setFileInfo(state.file);
+    if (state.file) {
+      setStatus('PDF selecionado. Clique em Gerar etiquetas.', 'idle');
+      suggestMode(state.file);
+    } else {
+      setStatus('Selecione um PDF para começar.', 'idle');
+      setModeHint('Selecione um modo ou envie um PDF para detectar automaticamente.');
+    }
+    updateButtons();
+  }
+
+  function setFileFromDrop(file) {
+    if (!dom.fileInput) return;
     const dt = new DataTransfer();
     dt.items.add(file);
-    els.pdfInput.files = dt.files;
-    els.pdfInput.dispatchEvent(new Event('change', { bubbles: true }));
+    dom.fileInput.files = dt.files;
+    dom.fileInput.dispatchEvent(new Event('change', { bubbles: true }));
   }
 
-
-  function findLastInkRow(imgData, w, h, opts = {}) {
-    const threshold = opts.threshold ?? 250;
-    const stepX = opts.stepX ?? 6;
-    const stepY = opts.stepY ?? 2;
-    const data = imgData.data;
-
-    for (let y = h - 1; y >= 0; y -= stepY) {
-      const row = y * w * 4;
-      for (let x = 0; x < w; x += stepX) {
-        const i = row + x * 4;
-        const a = data[i + 3];
-        if (!a) continue;
-        const r = data[i], g = data[i + 1], b = data[i + 2];
-        if (r < threshold || g < threshold || b < threshold) return y;
-      }
+  function handleModeChange() {
+    state.modeId = dom.modeSelect?.value || DEFAULT_MODE_ID;
+    state.modeTouched = true;
+    localStorage.setItem('value_mode', state.modeId);
+    clearOutput();
+    setModeHint('Modo selecionado manualmente. Se quiser, envie um PDF para reavaliar.');
+    if (state.file) {
+      setStatus('Modo alterado. Clique em Gerar etiquetas.', 'idle');
     }
-    return -1;
   }
 
-  function trimCanvasBottom(srcCanvas, imgData, padPx = 18) {
-    const w = srcCanvas.width;
-    const h = srcCanvas.height;
-    const last = findLastInkRow(imgData, w, h);
-
-    if (last < 0) return srcCanvas;
-
-    const newH = Math.max(120, Math.min(h, last + padPx));
-    if (newH >= h) return srcCanvas;
-
-    const out = document.createElement('canvas');
-    out.width = w;
-    out.height = newH;
-
-    const octx = out.getContext('2d');
-    octx.drawImage(srcCanvas, 0, 0, w, newH, 0, 0, w, newH);
-    return out;
+  function handleDownload() {
+    if (!state.outputBlobUrl) return;
+    const ts = new Date().toISOString().replace(/[:.]/g, '-');
+    const mode = getModeById(state.modeId);
+    const filename = `${OUTPUT_FILE_PREFIX}_${mode.id}_${ts}.pdf`;
+    downloadPdfFromUrl(state.outputBlobUrl, filename);
   }
 
-  // Remove a "área de checklist" das etiquetas da Shopee.
-  // Heurística:
-  // - varre de baixo para cima procurando uma linha escura "espalhada" pela largura;
-  // - geralmente é a linha tracejada/separador entre a etiqueta e o checklist.
-  // Fallback: recorte por proporção.
-
-  // Remove a "área de checklist" das etiquetas da Shopee.
-  // Versão 2 (bem mais robusta):
-  //  A) tenta achar a linha separadora (tracejada) pela cobertura na largura;
-  //  B) se falhar, acha a última faixa densa (barcode) e corta no primeiro "vazio" abaixo;
-  //  C) fallback por proporção.
-  function cropShopeeChecklist(srcCanvas, imgData) {
-    const w = srcCanvas.width;
-    const h = srcCanvas.height;
-    const data = imgData.data;
-
-    // 1) Projeção horizontal: "densidade" de pixels escuros por linha.
-    const stepX = 3;
-    const grayThr = 215; // mais permissivo (captura cinza/antialias)
-    const rowSamples = Math.max(1, Math.floor(w / stepX));
-    const ratios = new Float32Array(h);
-
-    for (let y = 0; y < h; y++) {
-      let dark = 0;
-      const row = y * w * 4;
-      for (let x = 0; x < w; x += stepX) {
-        const i = row + x * 4;
-        const a = data[i + 3];
-        if (!a) continue;
-        const r = data[i], g = data[i + 1], b = data[i + 2];
-        const gray = (r * 0.299) + (g * 0.587) + (b * 0.114);
-        if (gray < grayThr) dark++;
-      }
-      ratios[y] = dark / rowSamples;
+  function handleCancel() {
+    if (!state.processing) return;
+    state.cancelRequested = true;
+    setStatus('Cancelando...', 'warn');
+    if (pdfWorker) {
+      pdfWorker.postMessage({ type: 'cancel' });
     }
-
-    const cropTo = (newH) => {
-      const nh = Math.max(180, Math.min(h, Math.floor(newH)));
-      if (nh >= h || nh <= 0) return srcCanvas;
-      const out = document.createElement('canvas');
-      out.width = w;
-      out.height = nh;
-      const octx = out.getContext('2d');
-      octx.drawImage(srcCanvas, 0, 0, w, nh, 0, 0, w, nh);
-      return out;
-    };
-
-    // 2A) Detecta a linha separadora (tracejada) — baixa densidade, alta cobertura na largura.
-    const segments = 10;
-    const segW = w / segments;
-    const segThr = Math.max(6, segments - 3);
-    const minRatio = 0.012;
-    const maxRatio = 0.16; // evita pegar barcode/caixas pretas
-    const yMin = Math.floor(h * 0.22); // antes era 0.55 (perdia a linha em alguns PDFs)
-
-    for (let y = h - 1; y >= yMin; y--) {
-      const ratio = ratios[y];
-      if (ratio < minRatio || ratio > maxRatio) continue;
-
-      // cobertura por segmentos
-      const segHits = new Array(segments).fill(0);
-      const row = y * w * 4;
-      for (let x = 0; x < w; x += stepX) {
-        const i = row + x * 4;
-        const a = data[i + 3];
-        if (!a) continue;
-        const r = data[i], g = data[i + 1], b = data[i + 2];
-        const gray = (r * 0.299) + (g * 0.587) + (b * 0.114);
-        if (gray < grayThr) {
-          const s = Math.min(segments - 1, Math.floor(x / segW));
-          segHits[s] = 1;
-        }
-      }
-      const covered = segHits.reduce((acc, v) => acc + (v ? 1 : 0), 0);
-      if (covered < segThr) continue;
-
-      // Corta um pouquinho acima da linha
-      return cropTo(y - 10);
-    }
-
-    // 2B) Fallback inteligente: acha a última faixa densa (barcode) e corta no primeiro "vazio" abaixo.
-    const denseThr = 0.20;
-    const lowThr = 0.008;
-    const run = 6;
-    const searchFrom = Math.floor(h * 0.15);
-    const searchTo = Math.floor(h * 0.90);
-
-    let y0 = -1;
-    for (let y = searchTo; y >= searchFrom; y--) {
-      if (ratios[y] >= denseThr) { y0 = y; break; }
-    }
-
-    if (y0 >= 0) {
-      let cnt = 0;
-      for (let y = y0 + 1; y < h; y++) {
-        if (ratios[y] <= lowThr) cnt++;
-        else cnt = 0;
-        if (cnt >= run) {
-          const yCut = y - run + 1;
-          return cropTo(yCut - 2);
-        }
-      }
-    }
-
-    // 2C) Último fallback por proporção (mais agressivo do que a versão anterior)
-    return cropTo(h * 0.66);
   }
 
-  async function extractLabelsFromPdf(arrayBuffer, preset, onPageProgress) {
-    const scale = 2; // qualidade
-    const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
-
-    if (typeof onPageProgress === 'function') {
-      onPageProgress({ page: 0, total: pdf.numPages, phase: 'start' });
-    }
-
-    const labels = [];
-
-    for (let pageNum = 1; pageNum <= pdf.numPages; pageNum++) {
-      if (typeof onPageProgress === 'function') {
-        onPageProgress({ page: pageNum - 1, total: pdf.numPages, phase: 'render' });
-      }
-      const page = await pdf.getPage(pageNum);
-      const viewport = page.getViewport({ scale });
-      const canvas = document.createElement('canvas');
-      const ctx = canvas.getContext('2d');
-
-      canvas.width = viewport.width;
-      canvas.height = viewport.height;
-
-      await page.render({ canvasContext: ctx, viewport }).promise;
-
-      const cellW = Math.floor(canvas.width / preset.cols);
-      const cellH = Math.floor(canvas.height / preset.rows);
-
-      for (let r = 0; r < preset.rows; r++) {
-        for (let c = 0; c < preset.cols; c++) {
-          const crop = document.createElement('canvas');
-          crop.width = cellW;
-          crop.height = cellH;
-          const cctx = crop.getContext('2d');
-
-          const sx = c * cellW;
-          const sy = r * cellH;
-
-          cctx.drawImage(canvas, sx, sy, cellW, cellH, 0, 0, cellW, cellH);
-
-          // Heur\xedstica simples para descartar \u201cquadro\u201d vazio (muito branco)
-          const imgData = cctx.getImageData(0, 0, cellW, cellH);
-          let nonWhite = 0;
-          const step = 16; // amostragem
-          for (let i = 0; i < imgData.data.length; i += 4 * step) {
-            const rr = imgData.data[i];
-            const gg = imgData.data[i + 1];
-            const bb = imgData.data[i + 2];
-            if (rr < 245 || gg < 245 || bb < 245) nonWhite++;
-          }
-
-          // se for praticamente branco, ignora
-          if (nonWhite < 120) continue;
-
-          // 1) SEMPRE remove o checklist da Shopee automaticamente
-          let canvasOut = cropShopeeChecklist(crop, imgData);
-
-          // 2) Trim leve para remover sobra branca (sem afetar o recorte)
-          const padPx = Math.round(cellH * 0.012) + 10;
-          const octx = canvasOut.getContext('2d');
-          const outData = octx.getImageData(0, 0, canvasOut.width, canvasOut.height);
-          const trimmed = trimCanvasBottom(canvasOut, outData, padPx);
-
-          labels.push({
-            dataUrl: trimmed.toDataURL('image/png'),
-            wPx: trimmed.width,
-            hPx: trimmed.height,
-          });
-          }
-      }
-
-      if (typeof onPageProgress === 'function') {
-        onPageProgress({ page: pageNum, total: pdf.numPages, phase: 'donePage' });
-      }
-    }
-
-    if (typeof onPageProgress === 'function') {
-      onPageProgress({ page: pdf.numPages, total: pdf.numPages, phase: 'done' });
-    }
-
-    // Retorna objeto com labels e info do PDF
-    labels.numPages = pdf.numPages;
-    return labels;
-  }
-
-  function addLabelFitted(doc, lbl, x, y, maxW, maxH, align = 'top') {
-    // Usa as dimensões reais da imagem recortada para manter proporção correta
-    const imgW = lbl.wPx;
-    const imgH = lbl.hPx;
-    
-    if (!imgW || !imgH) {
-      console.warn('Etiqueta sem dimensões válidas', lbl);
-      return;
-    }
-
-    // Proporção da imagem (largura / altura)
-    const imgRatio = imgW / imgH;
-    
-    // Calcula dimensões de desenho que cabem no slot mantendo proporção
-    let drawW, drawH;
-    if (imgRatio > (maxW / maxH)) {
-      // Imagem é mais "larga" que o slot - limita pela largura
-      drawW = maxW;
-      drawH = maxW / imgRatio;
-    } else {
-      // Imagem é mais "alta" que o slot - limita pela altura
-      drawH = maxH;
-      drawW = maxH * imgRatio;
-    }
-
-    // Centraliza horizontalmente no slot
-    const dx = x + (maxW - drawW) / 2;
-    // Alinha no topo ou centraliza verticalmente
-    const dy = align === 'top' ? y : (y + (maxH - drawH) / 2);
-
-    doc.addImage(lbl.dataUrl, 'PNG', dx, dy, drawW, drawH, undefined, 'FAST');
-  }
-
-  function exportToPdf(labels, preset) {
-    const out = preset.output;
-    const pack = preset.pack;
-
-    // Doc base - A4 = 210x297mm
-    const doc = new jsPDF({
-      unit: 'mm',
-      format: out === 'a6' ? 'a6' : 'a4',
-      compress: true,
-    });
-
-    const pageW = doc.internal.pageSize.getWidth();  // 210mm para A4
-    const pageH = doc.internal.pageSize.getHeight(); // 297mm para A4
-
-    const margin = 3; // margem mínima
-    const gap = 2;
-
-    const addNewPage = () => doc.addPage(out === 'a6' ? 'a6' : 'a4');
-
-    // Para TODOS os presets: 1 etiqueta por página A4, ocupando toda a folha
-    // (igual à pré-visualização)
-    const maxW = pageW - 2 * margin;
-    const maxH = pageH - 2 * margin;
-    
-    for (let i = 0; i < labels.length; i++) {
-      if (i > 0) addNewPage();
-      addLabelFitted(doc, labels[i], margin, margin, maxW, maxH, 'top');
-    }
-
-    return doc;
-  }
-
-  async function onProcess() {
-    const file = els.pdfInput.files?.[0];
-    if (!file) {
-      setStatus('Selecione um PDF primeiro.', 'warn');
-      updateButtons();
-      return;
-    }
-
-    const preset = getPreset();
-    
-    // Registrar tempo de início
-    state.processStartTime = Date.now();
-    let pdf = null;
-
+  async function handleTestPage() {
     try {
-      disableWhileProcessing(true);
-      closeModal();
-      hideStats();
-      setStatus('Lendo PDF…', 'idle');
-      setMeta('');
-      setPreviewLoading('Lendo PDF…');
-      setProgress({ text: 'Lendo PDF…', current: 0, total: 1 });
-
-      const buf = await fileToArrayBuffer(file);
-      setStatus('Processando páginas…', 'idle');
-      setPreviewLoading('Processando páginas…');
-
-      const labels = await extractLabelsFromPdf(buf, preset, (p) => {
-        if (!p) return;
-        pdf = p.pdf; // guardar referência
-        const total = Number(p.total) || 1;
-        const page = Number(p.page) || 0;
-        if (p.phase === 'start') {
-          setProgress({ text: `Processando páginas… (0/${total})`, current: 0, total });
-          return;
-        }
-        if (p.phase === 'donePage') {
-          setProgress({ text: `Processando página ${page}/${total}`, current: page, total });
-          return;
-        }
-        if (p.phase === 'done') {
-          setProgress({ text: 'Finalizando…', current: total, total });
-        }
+      const { PDFDocument, rgb, StandardFonts } = getPdfLib();
+      const doc = await PDFDocument.create();
+      const page = doc.addPage([LABEL_WIDTH_PT, LABEL_HEIGHT_PT]);
+      const { width, height } = page.getSize();
+      const margin = 10;
+      page.drawRectangle({
+        x: margin,
+        y: margin,
+        width: width - margin * 2,
+        height: height - margin * 2,
+        borderColor: rgb(0.95, 0.55, 0.2),
+        borderWidth: 1.5,
+      });
+      page.drawLine({
+        start: { x: width / 2, y: margin },
+        end: { x: width / 2, y: height - margin },
+        color: rgb(0.8, 0.8, 0.8),
+        thickness: 0.5,
+      });
+      page.drawLine({
+        start: { x: margin, y: height / 2 },
+        end: { x: width - margin, y: height / 2 },
+        color: rgb(0.8, 0.8, 0.8),
+        thickness: 0.5,
+      });
+      const fontBold = await doc.embedFont(StandardFonts.HelveticaBold);
+      const fontRegular = await doc.embedFont(StandardFonts.Helvetica);
+      page.drawText('100 x 150 mm', {
+        x: margin + 6,
+        y: height - margin - 18,
+        size: 14,
+        font: fontBold,
+        color: rgb(0.95, 0.8, 0.6),
+      });
+      page.drawText('Use escala 100% na impressão', {
+        x: margin + 6,
+        y: margin + 6,
+        size: 9,
+        font: fontRegular,
+        color: rgb(0.8, 0.8, 0.8),
       });
 
-      state.labels = labels;
-      renderPreview(labels);
-      updateButtons();
-
-      // Calcular tempo de processamento
-      const processTime = ((Date.now() - state.processStartTime) / 1000).toFixed(1);
-
-      if (!labels.length) {
-        setStatus('Não encontrei etiquetas nesse PDF (ou o PDF está muito "branco").', 'warn');
-        setMeta('Dica: teste outro preset (A4 2/4 por página).');
-        toast('Nenhuma etiqueta detectada. Tente outro preset.', 'warn');
-        hideStats();
-        return;
-      }
-
-      // Mostrar estatísticas
-      showStats(labels.length, labels.numPages || 1, processTime);
-
-      setStatus(`Pronto: ${labels.length} etiqueta(s) detectada(s).`, 'ok');
-      setMeta(`Etiquetas: ${labels.length} • Preset: ${preset.label}`);
-      toast(`Pronto! ${labels.length} etiqueta(s) detectada(s).`, 'ok');
-
-      // Imprimir automaticamente se a opção estiver ativada
-      if (els.autoPrint?.checked) {
-        setTimeout(() => {
-          onPrint();
-        }, 300);
-      }
-
+      const pdfBytes = await doc.save();
+      const url = createPdfBlobUrl(pdfBytes);
+      downloadPdfFromUrl(url, 'pagina_teste_100x150.pdf');
+      setTimeout(() => revokePdfBlobUrl(url), 4000);
     } catch (err) {
-      console.error(err);
-      setStatus('Erro ao processar. Abra o Console (F12) e me envie a mensagem.', 'err');
-      setMeta(String(err?.message || err));
-      toast('Erro ao processar o PDF.', 'err');
-      state.labels = [];
-      renderPreview([]);
-      hideStats();
-    } finally {
-      hideProgress();
-      disableWhileProcessing(false);
-      updateButtons();
+      toast('Falha ao gerar a página de teste.', 'err');
     }
   }
 
-  function showStats(total, pages, time) {
-    if (!els.statsBox) return;
-    els.statsBox.hidden = false;
-    if (els.statTotal) els.statTotal.textContent = total;
-    if (els.statPages) els.statPages.textContent = pages;
-    if (els.statTime) els.statTime.textContent = `${time}s`;
-  }
-
-  function hideStats() {
-    if (els.statsBox) els.statsBox.hidden = true;
-  }
-
-  function onPrint() {
-    if (!state.labels.length) {
-      setStatus('Nada para imprimir. Primeiro processe um PDF.', 'warn');
-      toast('Processe um PDF primeiro!', 'warn');
-      return;
+  function resolveErrorMessage(err) {
+    if (err?.code === 'encrypted') return ERROR_MESSAGES.encrypted;
+    const message = String(err?.message || err || '').toLowerCase();
+    if (message.includes('encrypted') || message.includes('password')) {
+      return ERROR_MESSAGES.encrypted;
     }
+    if (err?.code === 'cancelled') {
+      return 'Processamento cancelado.';
+    }
+    return ERROR_MESSAGES.generic;
+  }
 
-    const preset = getPreset();
+  function shouldUseWorker(bytes) {
+    if (!bytes || !bytes.byteLength) return false;
+    return typeof Worker !== 'undefined' && bytes.byteLength > 1024 * 1024;
+  }
 
-    try {
-      setStatus('Preparando impressão…', 'idle');
-      
-      // Gera o PDF
-      const doc = exportToPdf(state.labels, preset);
-      
-      // Converte para blob e abre em nova janela para impressão
-      const pdfBlob = doc.output('blob');
-      const pdfUrl = URL.createObjectURL(pdfBlob);
-      
-      // Abre em nova janela e dispara impressão
-      const printWindow = window.open(pdfUrl, '_blank');
-      
-      if (printWindow) {
-        printWindow.onload = () => {
-          setTimeout(() => {
-            printWindow.print();
-          }, 250);
+  function createPdfWorker() {
+    const workerCode = `
+      'use strict';
+      let cancelled = false;
+      const MM_TO_PT = ${MM_TO_PT};
+      const LABEL_WIDTH_PT = ${LABEL_WIDTH_PT};
+      const LABEL_HEIGHT_PT = ${LABEL_HEIGHT_PT};
+
+      const getSlicesForPage = (size, modeId) => {
+        const width = Number(size?.width) || 0;
+        const height = Number(size?.height) || 0;
+        if (width <= 0 || height <= 0) return [];
+        if (modeId === 'standard') {
+          const halfW = width / 2;
+          const halfH = height / 2;
+          return [
+            { x: 0, y: halfH, w: halfW, h: halfH },
+            { x: halfW, y: halfH, w: halfW, h: halfH },
+            { x: 0, y: 0, w: halfW, h: halfH },
+            { x: halfW, y: 0, w: halfW, h: halfH },
+          ];
+        }
+        if (modeId === 'checklist') {
+          const halfW = width / 2;
+          const sliceH = Math.min(height, LABEL_HEIGHT_PT);
+          const topSliceY = Math.max(0, height - sliceH);
+          return [
+            { x: 0, y: topSliceY, w: halfW, h: sliceH },
+            { x: halfW, y: topSliceY, w: halfW, h: sliceH },
+          ];
+        }
+        return [];
+      };
+
+      const normalizeRotation = (angle) => {
+        const value = Number(angle) || 0;
+        const normalized = ((value % 360) + 360) % 360;
+        if (normalized === 90 || normalized === 180 || normalized === 270) return normalized;
+        return 0;
+      };
+
+      const getDisplaySize = (size, rotation) => {
+        if (rotation === 90 || rotation === 270) {
+          return { width: size.height, height: size.width };
+        }
+        return { width: size.width, height: size.height };
+      };
+
+      const mapSliceToUnrotated = (slice, pageW, pageH, rotation) => {
+        if (rotation === 90) {
+          return {
+            x: pageW - (slice.y + slice.h),
+            y: slice.x,
+            w: slice.h,
+            h: slice.w,
+          };
+        }
+        if (rotation === 180) {
+          return {
+            x: pageW - (slice.x + slice.w),
+            y: pageH - (slice.y + slice.h),
+            w: slice.w,
+            h: slice.h,
+          };
+        }
+        if (rotation === 270) {
+          return {
+            x: slice.y,
+            y: pageH - (slice.x + slice.w),
+            w: slice.h,
+            h: slice.w,
+          };
+        }
+        return slice;
+      };
+
+      const getRotationPlacement = (rotation, scaledW, scaledH, x0, y0) => {
+        if (rotation === 90) return { x: x0 + scaledH, y: y0 };
+        if (rotation === 180) return { x: x0 + scaledW, y: y0 + scaledH };
+        if (rotation === 270) return { x: x0, y: y0 + scaledW };
+        return { x: x0, y: y0 };
+      };
+
+      const fitInsideBox = (srcW, srcH, boxW, boxH) => {
+        const safeW = Math.max(1, srcW);
+        const safeH = Math.max(1, srcH);
+        const scale = Math.min(boxW / safeW, boxH / safeH);
+        return {
+          scale,
+          width: safeW * scale,
+          height: safeH * scale,
         };
-        setStatus('Janela de impressão aberta ✅', 'ok');
-        toast('Janela de impressão aberta!', 'ok');
-      } else {
-        // Fallback: se popup bloqueado, baixa o PDF
-        toast('Popup bloqueado. Baixando PDF...', 'warn');
-        doc.save(`etiquetas_${preset.output}_${Date.now()}.pdf`);
-        setStatus('PDF baixado (popup bloqueado).', 'warn');
-      }
-      
-      // Limpa URL após um tempo
-      setTimeout(() => URL.revokeObjectURL(pdfUrl), 60000);
-      
+      };
+
+      const toBoundingBox = (slice) => ({
+        left: slice.x,
+        bottom: slice.y,
+        right: slice.x + slice.w,
+        top: slice.y + slice.h,
+      });
+
+      const embedSlice = async (outDoc, sourceDoc, pageIndex, slice) => {
+        const srcPage = sourceDoc.getPages()[pageIndex];
+        const box = toBoundingBox(slice);
+        try {
+          return await outDoc.embedPage(srcPage, box);
+        } catch (err) {
+          const copied = await outDoc.copyPages(sourceDoc, [pageIndex]);
+          return outDoc.embedPage(copied[0], box);
+        }
+      };
+
+      self.onmessage = async (event) => {
+        const { type, payload } = event.data || {};
+        if (type === 'cancel') {
+          cancelled = true;
+          return;
+        }
+        if (type !== 'start') return;
+
+        cancelled = false;
+        try {
+          if (!self.PDFLib) {
+            importScripts(payload.pdfLibUrl);
+          }
+          const { PDFDocument, degrees } = self.PDFLib;
+          const bytes = new Uint8Array(payload.bytes || []);
+          const modeId = payload.modeId || 'checklist';
+
+          const sourceDoc = await PDFDocument.load(bytes, { ignoreEncryption: false });
+          const pages = sourceDoc.getPages();
+          self.postMessage({ type: 'init', payload: { pageCount: pages.length } });
+
+          const outDoc = await PDFDocument.create();
+
+          for (let pageIndex = 0; pageIndex < pages.length; pageIndex += 1) {
+            if (cancelled) {
+              self.postMessage({ type: 'cancelled' });
+              return;
+            }
+
+            const page = pages[pageIndex];
+            const size = page.getSize();
+            const rotation = normalizeRotation(page.getRotation()?.angle);
+            const displaySize = getDisplaySize(size, rotation);
+            const slices = getSlicesForPage(displaySize, modeId);
+
+            for (const slice of slices) {
+              const mappedSlice = mapSliceToUnrotated(slice, size.width, size.height, rotation);
+              const embedded = await embedSlice(outDoc, sourceDoc, pageIndex, mappedSlice);
+              const outPage = outDoc.addPage([LABEL_WIDTH_PT, LABEL_HEIGHT_PT]);
+              const fit = fitInsideBox(slice.w, slice.h, LABEL_WIDTH_PT, LABEL_HEIGHT_PT);
+              const x0 = (LABEL_WIDTH_PT - fit.width) / 2;
+              const y0 = (LABEL_HEIGHT_PT - fit.height) / 2;
+              const scaledW = mappedSlice.w * fit.scale;
+              const scaledH = mappedSlice.h * fit.scale;
+              const placement = getRotationPlacement(rotation, scaledW, scaledH, x0, y0);
+              outPage.drawPage(embedded, {
+                x: placement.x,
+                y: placement.y,
+                xScale: fit.scale,
+                yScale: fit.scale,
+                rotate: rotation ? degrees(rotation) : undefined,
+              });
+            }
+
+            self.postMessage({ type: 'progress', payload: { phase: 'page', current: pageIndex + 1, total: pages.length } });
+          }
+
+          self.postMessage({ type: 'progress', payload: { phase: 'finalize' } });
+          const pdfBytes = await outDoc.save();
+          const buffer = pdfBytes.buffer.slice(0);
+          self.postMessage({ type: 'done', payload: { pdfBytes: buffer, pageCount: outDoc.getPageCount() } }, [buffer]);
+        } catch (err) {
+          const message = String(err?.message || err || '');
+          const lower = message.toLowerCase();
+          const code = lower.includes('encrypted') || lower.includes('password') ? 'encrypted' : 'generic';
+          self.postMessage({ type: 'error', payload: { message, code } });
+        }
+      };
+    `;
+
+    const blob = new Blob([workerCode], { type: 'application/javascript' });
+    const url = URL.createObjectURL(blob);
+    const worker = new Worker(url);
+    worker._url = url;
+    return worker;
+  }
+
+  function getPdfLibUrl() {
+    try {
+      return new URL(PDF_LIB_URL, window.location.href).href;
     } catch (err) {
-      console.error(err);
-      setStatus('Erro ao preparar impressão.', 'err');
-      toast('Erro ao preparar impressão.', 'err');
+      return PDF_LIB_URL;
     }
   }
 
-  function onDownload() {
-    if (!state.labels.length) {
-      setStatus('Nada para baixar. Primeiro processe um PDF.', 'warn');
+  function processWithWorker(buffer, modeId, onProgress) {
+    if (!pdfWorker) {
+      pdfWorker = createPdfWorker();
+    }
+
+    return new Promise((resolve, reject) => {
+      const handleMessage = (event) => {
+        const { type, payload } = event.data || {};
+        if (type === 'init') {
+          state.inputPages = payload.pageCount || 0;
+          return;
+        }
+        if (type === 'progress') {
+          if (typeof onProgress === 'function') onProgress(payload);
+          return;
+        }
+        if (type === 'done') {
+          cleanup();
+          resolve({ pdfBytes: new Uint8Array(payload.pdfBytes), pageCount: payload.pageCount });
+          return;
+        }
+        if (type === 'cancelled') {
+          cleanup();
+          const err = new Error('cancelled');
+          err.code = 'cancelled';
+          reject(err);
+          return;
+        }
+        if (type === 'error') {
+          cleanup();
+          const err = new Error(payload.message || ERROR_MESSAGES.generic);
+          err.code = payload.code || 'generic';
+          reject(err);
+        }
+      };
+
+      const handleError = () => {
+        cleanup();
+        reject(new Error(ERROR_MESSAGES.generic));
+      };
+
+      const cleanup = () => {
+        pdfWorker.removeEventListener('message', handleMessage);
+        pdfWorker.removeEventListener('error', handleError);
+      };
+
+      pdfWorker.addEventListener('message', handleMessage);
+      pdfWorker.addEventListener('error', handleError);
+
+      pdfWorker.postMessage({
+        type: 'start',
+        payload: { bytes: buffer, modeId, pdfLibUrl: getPdfLibUrl() },
+      }, [buffer]);
+    });
+  }
+
+  async function processInMain(bytes, modeId, onProgress) {
+    const { PDFDocument } = getPdfLib();
+    const sourceDoc = await PDFDocument.load(bytes, { ignoreEncryption: false });
+    state.inputPages = sourceDoc.getPages().length;
+    return renderOutputPdf({
+      sourceDoc,
+      modeId,
+      onProgress,
+      shouldCancel: () => state.cancelRequested,
+    });
+  }
+
+  async function handleGenerate() {
+    if (state.processing) return;
+
+    const validation = validatePdfFile(state.file);
+    if (!validation.ok) {
+      setStatus(validation.message, 'err');
+      toast(validation.message, 'err');
       return;
     }
 
-    const preset = getPreset();
-    
-    try {
-      setStatus('Gerando PDF final…', 'idle');
-      const doc = exportToPdf(state.labels, preset);
-      const name = `etiquetas_${preset.output}_${Date.now()}.pdf`;
-      doc.save(name);
-      setStatus('PDF gerado e baixado ✅', 'ok');
-      toast('PDF gerado e baixado ✅', 'ok');
-    } catch (err) {
-      console.error(err);
-      setStatus('Erro ao gerar o PDF final.', 'err');
-      setMeta(String(err?.message || err));
-      toast('Erro ao gerar o PDF final.', 'err');
-    }
-  }
-
-  function initPresetOptions() {
-    const keys = Object.keys(presets);
-    els.preset.innerHTML = keys.map(k => `<option value="${k}">${presets[k].label}</option>`).join('');
-    els.preset.value = 'shopee_a4_2up_to_a4_2up_side';
-    state.presetKey = els.preset.value;
-    updatePresetChips();
-  }
-
-  function applyEmbedMode() {
-    const params = new URLSearchParams(window.location.search || '');
-    const v = String(params.get('embed') || '').trim().toLowerCase();
-    const force = (v === '1' || v === 'true' || v === 'yes');
-
-    if (force) {
-      document.body.classList.add('is-embed');
-      return;
-    }
-
-    try {
-      if (window.self !== window.top) document.body.classList.add('is-embed');
-    } catch (_) {
-      // cross-origin access => assume embed
-      document.body.classList.add('is-embed');
-    }
-  }
-
-  async function init() {
-    applyEmbedMode();
-
-    // Segurança: garante que modais nunca iniciem abertos (alguns browsers/restauração de sessão podem manter o estado)
-    state.modalOpen = false;
-    state.viewerOpen = false;
-    if (els.previewModal) els.previewModal.hidden = true;
-    if (els.viewerModal) els.viewerModal.hidden = true;
-    document.body.classList.remove('is-modal-open');
-
-    clearPreview();
-    setPreviewMode('compact');
-    setModalCols(2);
-    hideProgress();
-    hideStats();
-    setStatus('Carregando…', 'idle');
-    setMeta('');
+    state.processing = true;
+    state.cancelRequested = false;
     updateButtons();
-    setFileUI(null);
+    resetProgress('—');
+    resetTimer();
+    startTimer();
+    setPreview('');
+    clearPreviewThumbs();
+    if (dom.summary) dom.summary.hidden = true;
 
-    // placeholder invisível para evitar ícone de imagem quebrada no viewer
-    if (els.viewerImg) {
-      els.viewerImg.src = 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw==';
-      els.viewerImg.style.width = 'auto';
+    try {
+      setStatus('Lendo PDF...', 'idle');
+      setProgress({ text: 'Lendo PDF...', current: 0, total: 1 });
+
+      const buffer = await state.file.arrayBuffer();
+      const bytes = new Uint8Array(buffer);
+      const mode = getModeById(state.modeId);
+
+      const onProgress = ({ phase, current, total }) => {
+        if (phase === 'page') {
+          const text = `Processando página ${current} de ${total}...`;
+          setStatus(text, 'idle');
+          setProgress({ text, current, total });
+          updateEta(current, total);
+        }
+        if (phase === 'finalize') {
+          setStatus('Gerando PDF final...', 'idle');
+          setProgress({ text: 'Gerando PDF final...', current: 1, total: 1 });
+        }
+      };
+
+      let result;
+      if (shouldUseWorker(bytes)) {
+        try {
+          const workerBuffer = buffer.slice(0);
+          result = await processWithWorker(workerBuffer, state.modeId, onProgress);
+        } catch (err) {
+          if (err?.code === 'encrypted' || err?.code === 'cancelled') throw err;
+          toast('Worker indisponível. Processando no navegador...', 'warn');
+          result = await processInMain(bytes, state.modeId, onProgress);
+        }
+      } else {
+        result = await processInMain(bytes, state.modeId, onProgress);
+      }
+
+      if (!result.pageCount) {
+        throw new Error(ERROR_MESSAGES.generic);
+      }
+
+      if (state.outputBlobUrl) revokePdfBlobUrl(state.outputBlobUrl);
+      state.outputBytes = result.pdfBytes;
+      const inputPages = state.inputPages || 0;
+      const expectedOutput = inputPages ? inputPages * mode.perPage : result.pageCount;
+      state.outputPages = result.pageCount || expectedOutput;
+      state.outputBlobUrl = createPdfBlobUrl(result.pdfBytes);
+
+      setPreview(state.outputBlobUrl);
+      renderThumbsFromBytes(state.outputBytes);
+      updateSummary();
+      setStatus('PDF pronto para download.', 'ok');
+      setProgress({ text: 'Concluído', current: 1, total: 1 });
+      toast('PDF pronto para download.', 'ok');
+      tryAutoPrint();
+    } catch (err) {
+      const message = resolveErrorMessage(err);
+      const kind = err?.code === 'cancelled' ? 'warn' : 'err';
+      setStatus(message, kind);
+      resetProgress('—');
+      clearOutput();
+      toast(message, err?.code === 'cancelled' ? 'warn' : 'err');
+    } finally {
+      stopTimer();
+      state.processing = false;
+      updateButtons();
+    }
+  }
+
+  function initEvents() {
+    initPdfJs();
+    if (dom.modeSelect) {
+      dom.modeSelect.innerHTML = MODES.map((mode) => (
+        `<option value="${mode.id}">${mode.label}</option>`
+      )).join('');
+      const savedMode = localStorage.getItem('value_mode');
+      const validSaved = MODES.some((mode) => mode.id === savedMode);
+      if (validSaved) {
+        dom.modeSelect.value = savedMode;
+        state.modeId = savedMode;
+        state.modeTouched = true;
+      } else {
+        dom.modeSelect.value = DEFAULT_MODE_ID;
+        state.modeId = DEFAULT_MODE_ID;
+      }
     }
 
-    // Preview tools
-    if (els.btnViewCompact) els.btnViewCompact.addEventListener('click', () => setPreviewMode('compact'));
-    if (els.btnViewLarge) els.btnViewLarge.addEventListener('click', () => setPreviewMode('large'));
-    if (els.btnFullscreen) els.btnFullscreen.addEventListener('click', () => openModal(null));
+    resetProgress('—');
+    resetTimer();
+    setStatus('Selecione um PDF para começar.', 'idle');
+    setPreview('');
+    if (state.modeTouched) {
+      const mode = getModeById(state.modeId);
+      setModeHint(`Modo salvo: <strong>${mode.label}</strong>. Envie um PDF para reavaliar.`);
+    } else {
+      setModeHint('Selecione um modo ou envie um PDF para detectar automaticamente.');
+    }
+    updateButtons();
 
-    // Click (ou Enter/Espaço) na thumb abre o viewer (zoom)
-    if (els.preview) {
-      els.preview.addEventListener('click', (e) => {
-        const t = e.target?.closest?.('.thumb');
-        if (!t) return;
-        const idx = Number(t.getAttribute('data-idx'));
-        if (Number.isFinite(idx)) openViewer(idx);
-      });
-      els.preview.addEventListener('keydown', (e) => {
-        if (e.key !== 'Enter' && e.key !== ' ') return;
-        const t = e.target?.closest?.('.thumb');
-        if (!t) return;
-        e.preventDefault();
-        const idx = Number(t.getAttribute('data-idx'));
-        if (Number.isFinite(idx)) openViewer(idx);
+    if (dom.modeSelect) dom.modeSelect.addEventListener('change', handleModeChange);
+
+    if (dom.btnOpenPreview) dom.btnOpenPreview.addEventListener('click', openPreview);
+    if (dom.btnCancel) dom.btnCancel.addEventListener('click', handleCancel);
+    if (dom.btnTestPage) dom.btnTestPage.addEventListener('click', handleTestPage);
+
+    if (dom.previewThumbs) {
+      dom.previewThumbs.addEventListener('click', (event) => {
+        const target = event.target?.closest?.('.thumb');
+        if (!target) return;
+        const pageIndex = Number(target.dataset.page);
+        if (Number.isFinite(pageIndex)) openViewer(pageIndex);
       });
     }
 
-    // Modal fullscreen: clique/Enter/Espaço abre viewer
-    if (els.modalPreview) {
-      els.modalPreview.addEventListener('click', (e) => {
-        const t = e.target?.closest?.('.thumb');
-        if (!t) return;
-        const idx = Number(t.getAttribute('data-idx'));
-        if (Number.isFinite(idx)) openViewer(idx);
-      });
-      els.modalPreview.addEventListener('keydown', (e) => {
-        if (e.key !== 'Enter' && e.key !== ' ') return;
-        const t = e.target?.closest?.('.thumb');
-        if (!t) return;
-        e.preventDefault();
-        const idx = Number(t.getAttribute('data-idx'));
-        if (Number.isFinite(idx)) openViewer(idx);
-      });
-    }
-
-    // Modal listeners
-    if (els.previewModal) {
-      els.previewModal.addEventListener('click', (e) => {
-        const close = e.target?.closest?.('[data-close="1"]');
-        if (close) closeModal();
-      });
-    }
-    if (els.modalClose) els.modalClose.addEventListener('click', closeModal);
-    if (els.modalCols1) els.modalCols1.addEventListener('click', () => setModalCols(1));
-    if (els.modalCols2) els.modalCols2.addEventListener('click', () => setModalCols(2));
-
-    // Viewer listeners
-    if (els.viewerModal) {
-      els.viewerModal.addEventListener('click', (e) => {
-        const close = e.target?.closest?.('[data-close-viewer="1"]');
+    if (dom.viewerModal) {
+      dom.viewerModal.addEventListener('click', (event) => {
+        const close = event.target?.closest?.('[data-close="1"]');
         if (close) closeViewer();
       });
     }
-    if (els.viewerClose) els.viewerClose.addEventListener('click', closeViewer);
-    if (els.viewerPrev) els.viewerPrev.addEventListener('click', () => setViewerIndex(state.viewerIdx - 1));
-    if (els.viewerNext) els.viewerNext.addEventListener('click', () => setViewerIndex(state.viewerIdx + 1));
-    if (els.viewerFit) els.viewerFit.addEventListener('click', () => setViewerMode('fit'));
-    if (els.viewer100) els.viewer100.addEventListener('click', () => setViewerMode('100'));
-    if (els.viewerZoomIn) els.viewerZoomIn.addEventListener('click', () => zoomBy(1.15));
-    if (els.viewerZoomOut) els.viewerZoomOut.addEventListener('click', () => zoomBy(1 / 1.15));
+    if (dom.viewerClose) dom.viewerClose.addEventListener('click', closeViewer);
+    if (dom.viewerPrev) dom.viewerPrev.addEventListener('click', () => {
+      state.viewerPage -= 1;
+      renderViewerPage();
+    });
+    if (dom.viewerNext) dom.viewerNext.addEventListener('click', () => {
+      state.viewerPage += 1;
+      renderViewerPage();
+    });
+    if (dom.viewerZoomIn) dom.viewerZoomIn.addEventListener('click', () => {
+      state.viewerScale = Math.min(3, state.viewerScale + 0.2);
+      renderViewerPage();
+    });
+    if (dom.viewerZoomOut) dom.viewerZoomOut.addEventListener('click', () => {
+      state.viewerScale = Math.max(0.4, state.viewerScale - 0.2);
+      renderViewerPage();
+    });
 
-    if (els.viewerBody) {
-      els.viewerBody.addEventListener('wheel', (e) => {
-        if (!state.viewerOpen) return;
-        if (!e.ctrlKey) return;
-        e.preventDefault();
-        const mult = e.deltaY < 0 ? 1.12 : (1 / 1.12);
-        zoomBy(mult);
-      }, { passive: false });
+    document.addEventListener('keydown', (event) => {
+      if (event.key === 'Escape' && dom.viewerModal && !dom.viewerModal.hidden) {
+        closeViewer();
+      }
+    });
+
+    if (dom.autoPrint) {
+      const saved = localStorage.getItem('value_autoPrint');
+      if (saved === 'true') dom.autoPrint.checked = true;
+      dom.autoPrint.addEventListener('change', () => {
+        localStorage.setItem('value_autoPrint', dom.autoPrint.checked ? 'true' : 'false');
+      });
     }
 
-    window.addEventListener('resize', () => {
-      if (state.viewerOpen && state.viewerMode === 'fit') setViewerMode('fit');
-    });
-
-    // Atalhos
-    document.addEventListener('keydown', (e) => {
-      if (e.key === 'Escape') {
-        if (state.viewerOpen) {
-          closeViewer();
+    if (dom.fileInput) {
+      dom.fileInput.addEventListener('change', () => {
+        const file = dom.fileInput.files?.[0];
+        if (!file) {
+          setFileFromInput(null);
           return;
         }
-        if (state.modalOpen) {
-          closeModal();
+        const validation = validatePdfFile(file);
+        if (!validation.ok) {
+          setFileFromInput(null);
+          setStatus(validation.message, 'err');
+          toast(validation.message, 'err');
           return;
         }
-      }
-
-      if (state.viewerOpen) {
-        if (e.key === 'ArrowLeft') {
-          e.preventDefault();
-          setViewerIndex(state.viewerIdx - 1);
-          return;
-        }
-        if (e.key === 'ArrowRight') {
-          e.preventDefault();
-          setViewerIndex(state.viewerIdx + 1);
-          return;
-        }
-        if (e.key === '+' || e.key === '=') {
-          e.preventDefault();
-          zoomBy(1.15);
-          return;
-        }
-        if (e.key === '-') {
-          e.preventDefault();
-          zoomBy(1 / 1.15);
-          return;
-        }
-      }
-      if (e.ctrlKey && (e.key === 'Enter' || e.key === 'NumpadEnter')) {
-        if (!els.btnProcess.disabled) els.btnProcess.click();
-      }
-      if (e.ctrlKey && e.key.toLowerCase() === 's') {
-        if (!els.btnDownload.disabled) {
-          e.preventDefault();
-          els.btnDownload.click();
-        }
-      }
-    });
-
-    // Upload premium (clique + arrastar/soltar)
-    if (els.btnPick) els.btnPick.addEventListener('click', () => els.pdfInput.click());
-    if (els.dropZone) {
-      const openPicker = () => els.pdfInput.click();
-
-      els.dropZone.addEventListener('click', (e) => {
-        // evita duplo clique quando o usuário clica no botão interno
-        if (e.target?.closest?.('button')) return;
-        openPicker();
+        setFileFromInput(file);
       });
+    }
 
-      els.dropZone.addEventListener('keydown', (e) => {
-        if (e.key === 'Enter' || e.key === ' ') {
-          e.preventDefault();
-          openPicker();
-        }
-      });
+    if (dom.btnPick && dom.fileInput) {
+      dom.btnPick.addEventListener('click', () => dom.fileInput.click());
+    }
 
-      const stop = (e) => {
-        e.preventDefault();
-        e.stopPropagation();
+    if (dom.dropZone && dom.fileInput) {
+      const stop = (event) => {
+        event.preventDefault();
+        event.stopPropagation();
       };
 
+      dom.dropZone.addEventListener('click', (event) => {
+        if (event.target?.closest?.('button')) return;
+        dom.fileInput.click();
+      });
+
+      dom.dropZone.addEventListener('keydown', (event) => {
+        if (event.key === 'Enter' || event.key === ' ') {
+          event.preventDefault();
+          dom.fileInput.click();
+        }
+      });
+
       ['dragenter', 'dragover'].forEach((evt) => {
-        els.dropZone.addEventListener(evt, (e) => {
-          stop(e);
-          els.dropZone.classList.add('is-dragover');
+        dom.dropZone.addEventListener(evt, (event) => {
+          stop(event);
+          dom.dropZone.classList.add('is-dragover');
         });
       });
 
-      ['dragleave', 'dragend'].forEach((evt) => {
-        els.dropZone.addEventListener(evt, (e) => {
-          stop(e);
-          els.dropZone.classList.remove('is-dragover');
+      ['dragleave', 'dragend', 'drop'].forEach((evt) => {
+        dom.dropZone.addEventListener(evt, (event) => {
+          stop(event);
+          dom.dropZone.classList.remove('is-dragover');
         });
       });
 
-      els.dropZone.addEventListener('drop', (e) => {
-        stop(e);
-        els.dropZone.classList.remove('is-dragover');
-        const file = e.dataTransfer?.files?.[0];
-        if (file && file.type === 'application/pdf') setPdfFile(file);
-        else setStatus('Solte um arquivo PDF válido.', 'warn');
+      dom.dropZone.addEventListener('drop', (event) => {
+        const file = event.dataTransfer?.files?.[0];
+        if (!file) return;
+        const validation = validatePdfFile(file);
+        if (!validation.ok) {
+          setStatus(validation.message, 'err');
+          toast(validation.message, 'err');
+          return;
+        }
+        setFileFromDrop(file);
       });
     }
 
-    if (els.btnClear) {
-      els.btnClear.addEventListener('click', () => {
-        els.pdfInput.value = '';
-        state.labels = [];
-        closeModal();
-        hideProgress();
-        renderPreview([]);
-        setMeta('');
-        setFileUI(null);
-        setStatus('Selecione um PDF para começar.', 'idle');
-        updateButtons();
-      });
-    }
-
-    // Listeners
-    els.pdfInput.addEventListener('change', () => {
-      state.labels = [];
-      closeModal();
-      hideProgress();
-      renderPreview([]);
-      setMeta('');
-      setFileUI(els.pdfInput.files?.[0] || null);
-      if (els.pdfInput.files?.[0]) {
-        setStatus('PDF selecionado. Clique em Processar.', 'idle');
-      } else {
-        setStatus('Selecione um PDF.', 'idle');
-      }
-      updateButtons();
-    });
-
-    els.btnProcess.addEventListener('click', onProcess);
-    els.btnDownload.addEventListener('click', onDownload);
-    if (els.btnPrint) els.btnPrint.addEventListener('click', onPrint);
-
-    // Carregar preferência de auto-print do localStorage
-    if (els.autoPrint) {
-      const savedAutoPrint = localStorage.getItem('etiqueta_autoPrint');
-      if (savedAutoPrint === 'true') els.autoPrint.checked = true;
-      
-      els.autoPrint.addEventListener('change', () => {
-        localStorage.setItem('etiqueta_autoPrint', els.autoPrint.checked ? 'true' : 'false');
-      });
-    }
-
-    initPresetOptions();
-
-    // Ao trocar preset, pede reprocessamento (evita recorte errado)
-    els.preset.addEventListener('change', () => {
-      state.labels = [];
-      closeModal();
-      hideProgress();
-      renderPreview([]);
-      setMeta('');
-      updatePresetChips();
-      if (els.pdfInput.files?.[0]) setStatus('Preset alterado. Clique em Processar.', 'idle');
-      else setStatus('Selecione um PDF.', 'idle');
-      updateButtons();
-    });
-
-    try {
-      await loadLibs();
-      state.libsReady = true;
-      setStatus('Pronto para processar \u2705', 'ok');
-      setMeta('Dica: se o PDF do Shopee vier em A4 com 2 etiquetas, use o primeiro preset.');
-    } catch (err) {
-      console.error(err);
-      state.libsReady = false;
-      setStatus('Falha ao carregar libs (PDF.js / jsPDF).', 'err');
-      setMeta(String(err?.message || err));
-    } finally {
-      updateButtons();
-    }
+    if (dom.btnGenerate) dom.btnGenerate.addEventListener('click', handleGenerate);
+    if (dom.btnDownload) dom.btnDownload.addEventListener('click', handleDownload);
   }
 
   if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', init);
+    document.addEventListener('DOMContentLoaded', initEvents);
   } else {
-    init();
+    initEvents();
   }
 })();
