@@ -1,22 +1,24 @@
-﻿:root {
+:root {
   color-scheme: dark;
-  --bg0: #0a0b12;
-  --bg1: #10121b;
-  --bg2: #171a2b;
-  --surface: rgba(16, 18, 28, 0.92);
-  --surface-2: rgba(20, 22, 34, 0.92);
-  --glass: rgba(255, 255, 255, 0.05);
-  --stroke: rgba(255, 255, 255, 0.1);
-  --text: rgba(255, 255, 255, 0.92);
-  --muted: rgba(255, 255, 255, 0.68);
-  --muted-2: rgba(255, 255, 255, 0.5);
-  --accent: #f37b1d;
-  --accent-2: #ff9a3d;
-  --accent-3: #d96b20;
-  --shadow: 0 24px 70px rgba(0, 0, 0, 0.55);
-  --shadow-soft: 0 18px 40px rgba(0, 0, 0, 0.4);
-  --radius: 22px;
-  --ease: cubic-bezier(.2, .8, .2, 1);
+  --bg0: #020204;
+  --bg1: #060609;
+  --bg2: #0d0d12;
+  --surface: rgba(4, 4, 6, 0.9);
+  --surface-2: rgba(10, 10, 14, 0.95);
+  --glass: rgba(255, 255, 255, 0.01);
+  --stroke: rgba(255, 106, 0, 0.22);
+  --stroke-soft: rgba(255, 255, 255, 0.05);
+  --text: #f4f4f7;
+  --muted: #a1a1aa;
+  --muted-2: #52525b;
+  --accent: #ff6a00;
+  --accent-2: #ff9d00;
+  --accent-3: #cc5500;
+  --accent-glow: rgba(255, 106, 0, 0.3);
+  --shadow: 0 30px 80px rgba(0, 0, 0, 0.95);
+  --shadow-soft: 0 16px 40px rgba(0, 0, 0, 0.7);
+  --radius: 20px;
+  --ease: cubic-bezier(.16, 1, .3, 1);
   --font-body: "Sora", sans-serif;
   --font-head: "Space Grotesk", "Sora", sans-serif;
 }
@@ -40,11 +42,9 @@ body {
   margin: 0;
   font-family: var(--font-body);
   color: var(--text);
-  background:
-    radial-gradient(1200px 700px at 15% 10%, rgba(243, 123, 29, 0.22), transparent 60%),
-    radial-gradient(900px 600px at 85% 20%, rgba(243, 123, 29, 0.12), transparent 55%),
-    linear-gradient(160deg, var(--bg0), var(--bg2));
+  background-color: #000000;
   overflow-x: hidden;
+  line-height: 1.6;
 }
 
 body.is-modal-open {
@@ -69,91 +69,116 @@ a {
   color: inherit;
 }
 
-.ambient {
-  position: fixed;
-  inset: -10% -5% auto -5%;
-  height: 420px;
-  background:
-    radial-gradient(320px 220px at 12% 20%, rgba(243, 123, 29, 0.26), transparent 60%),
-    radial-gradient(260px 200px at 78% 40%, rgba(255, 160, 90, 0.12), transparent 60%),
-    radial-gradient(260px 200px at 50% 10%, rgba(255, 255, 255, 0.05), transparent 70%);
-  pointer-events: none;
-  animation: drift 14s ease-in-out infinite alternate;
-}
-
 .page {
   position: relative;
   z-index: 1;
-  max-width: 1120px;
+  max-width: 1600px;
+  width: 100%;
   margin: 0 auto;
-  padding: 32px 18px 56px;
+  padding: 6px 16px 8px;
 }
 
+/* Centered modern SaaS header */
 .topbar {
   display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 18px;
-  margin-bottom: 22px;
-  animation: fadeUp 0.6s var(--ease) both;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: 4px;
+  margin-bottom: 10px;
+  margin-top: 0px;
+  animation: fadeUp 0.8s var(--ease) both;
 }
 
 .brand {
   display: flex;
+  flex-direction: column;
   align-items: center;
-  gap: 12px;
+  gap: 4px;
 }
 
-.logo {
-  width: 44px;
-  height: 44px;
-  border-radius: 14px;
+/* Naked, centered logo with glowing drop shadow */
+.logo-container {
+  width: 42px;
+  height: 42px;
   display: flex;
   align-items: center;
   justify-content: center;
-  font-family: var(--font-head);
-  font-weight: 700;
-  font-size: 18px;
-  color: rgba(255, 255, 255, 0.92);
-  background: linear-gradient(180deg, rgba(243, 123, 29, 0.5), rgba(243, 123, 29, 0.2));
-  border: 1px solid rgba(243, 123, 29, 0.45);
-  box-shadow: 0 14px 34px rgba(0, 0, 0, 0.45);
+  background: none !important;
+  border: none !important;
+  box-shadow: none !important;
+  padding: 0;
+  transition: transform 0.4s var(--ease);
+}
+
+.logo-container:hover {
+  transform: scale(1.08) rotate(3deg);
+}
+
+.brand-logo {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  filter: drop-shadow(0 0 10px rgba(255, 106, 0, 0.45));
+}
+
+.brand-text {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
 }
 
 .brand-text h1 {
-  margin: 4px 0 6px;
+  margin: 0;
   font-family: var(--font-head);
-  font-size: clamp(22px, 3vw, 32px);
-  letter-spacing: 0.2px;
+  font-weight: 700;
+  font-size: clamp(18px, 2vw, 22px);
+  letter-spacing: -0.02em;
+  background: linear-gradient(135deg, #ffffff 60%, rgba(255, 255, 255, 0.7));
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
 }
 
 .brand-kicker {
-  font-size: 11px;
-  letter-spacing: 0.14em;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.2em;
   text-transform: uppercase;
-  color: var(--muted-2);
+  color: var(--accent);
+  text-shadow: 0 0 12px rgba(255, 106, 0, 0.35);
 }
 
 .brand-text p {
   margin: 0;
   color: var(--muted);
-  font-size: 14px;
+  font-size: 13px;
+  font-weight: 400;
+  max-width: 500px;
 }
 
+/* Absolute positioned Back button */
 .back {
+  position: absolute;
+  top: 18px;
+  right: 24px;
   text-decoration: none;
-  color: var(--muted);
-  font-size: 13px;
-  padding: 10px 14px;
+  color: var(--text);
+  font-size: 11.5px;
+  font-weight: 600;
+  padding: 6px 16px;
   border-radius: 999px;
-  background: rgba(255, 255, 255, 0.06);
-  border: 1px solid transparent;
-  transition: border-color 0.2s ease, color 0.2s ease, background 0.2s ease, transform 0.08s ease;
+  background: rgba(255, 106, 0, 0.06);
+  border: 1px solid rgba(255, 106, 0, 0.25);
+  backdrop-filter: blur(8px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+  transition: all 0.25s var(--ease);
 }
 
 .back:hover {
-  border-color: rgba(255, 255, 255, 0.18);
-  color: var(--text);
+  background: rgba(255, 106, 0, 0.14);
+  border-color: var(--accent);
+  box-shadow: 0 6px 16px rgba(255, 106, 0, 0.25);
+  transform: translateY(-1px);
 }
 
 .back:active {
@@ -163,7 +188,7 @@ a {
 @keyframes fadeUp {
   from {
     opacity: 0;
-    transform: translateY(16px);
+    transform: translateY(20px);
   }
   to {
     opacity: 1;
@@ -176,18 +201,23 @@ a {
     transform: translateY(0) translateX(0);
   }
   to {
-    transform: translateY(12px) translateX(18px);
+    transform: translateY(10px) translateX(15px);
   }
 }
 
 @media (max-width: 900px) {
   .page {
-    padding: 28px 16px 48px;
+    padding: 24px 16px 48px;
   }
 
   .topbar {
-    flex-direction: column;
-    align-items: flex-start;
+    margin-bottom: 24px;
+  }
+  
+  .back {
+    position: static;
+    margin-top: 8px;
+    align-self: center;
   }
 }
 

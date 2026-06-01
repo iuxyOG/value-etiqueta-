@@ -1,0 +1,6 @@
+# Arquivos de teste / temporários
+_scratch/
+node_modules/
+
+# PDFs de etiquetas contêm dados reais de clientes (endereços) — não versionar
+*.pdf
